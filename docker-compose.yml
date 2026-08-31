@@ -1,0 +1,172 @@
+# ==============================================================================
+# Central Policy Management (CPM) - Docker Compose (Simplified Architecture)
+# ==============================================================================
+
+x-common-env: &common-env
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cpm_user:cpm_secret_2024@postgresql:5432/cpm_db}
+  SECRET_KEY: ${SECRET_KEY}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - cpm-net
+  depends_on:
+    postgresql:
+      condition: service_healthy
+
+services:
+  # --- Primary Database ---
+  postgresql:
+    image: postgres:16-alpine
+    container_name: cpm-postgres
+    environment:
+      POSTGRES_DB: cpm_db
+      POSTGRES_USER: cpm_user
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./database/schema:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"
+    networks:
+      - cpm-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpm_user -d cpm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --- Open Policy Agent ---
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: cpm-opa
+    command: run --server --addr :8181 --log-format json --log-level info /policies
+    volumes:
+      - ./backend-service/rego:/policies:ro
+    ports:
+      - "8181:8181"
+    networks:
+      - cpm-net
+    restart: unless-stopped
+
+  # --- Temporal Workflow Server ---
+  temporal:
+    image: temporalio/auto-setup:1.24
+    container_name: cpm-temporal
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: cpm_user
+      POSTGRES_PWD: ${PG_PASSWORD}
+      POSTGRES_SEEDS: postgresql
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/docker.yaml
+    volumes:
+      - ./infrastructure/temporal:/etc/temporal/dynamicconfig:ro
+    ports:
+      - "7233:7233"
+    networks:
+      - cpm-net
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    container_name: cpm-temporal-ui
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8088:8080"   # Temporal UI -> http://localhost:8088
+    networks:
+      - cpm-net
+    depends_on:
+      - temporal
+    restart: unless-stopped
+
+  # --- Consolidated Core Backend Service ---
+  backend-service:
+    build:
+      context: .
+      dockerfile: backend-service/Dockerfile
+    container_name: cpm-backend-service
+    ports:
+      - "8000:8000"   # Core API -> http://localhost:8000
+    environment:
+      <<: *common-env
+      OPA_URL: ${OPA_URL}
+      TEMPORAL_HOST: ${TEMPORAL_HOST}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-policy-deployment}
+      SNOWFLAKE_CONNECTOR_URL: ${SNOWFLAKE_CONNECTOR_URL}
+      REDSHIFT_CONNECTOR_URL: ${REDSHIFT_CONNECTOR_URL}
+    <<: *service-defaults
+    volumes:
+      - ./exported_policies:/app/exported_policies
+      - ./snowflake-connector/exported_policies:/app/snowflake-connector/exported_policies
+      - ./redshift-connector/exported_policies:/app/redshift-connector/exported_policies
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      opa:
+        condition: service_started
+
+  # --- Snowflake Connector ---
+  snowflake-connector:
+    build:
+      context: .
+      dockerfile: snowflake-connector/Dockerfile
+    container_name: cpm-snowflake-connector
+    environment:
+      <<: *common-env
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-demo.us-east-1}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER:-cpm_svc}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD:-}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-CPM_WH}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE:-SYSADMIN}
+    <<: *service-defaults
+    volumes:
+      - ./snowflake-connector/exported_policies:/app/exported_policies
+
+  # --- Redshift Connector ---
+  redshift-connector:
+    build:
+      context: .
+      dockerfile: redshift-connector/Dockerfile
+    container_name: cpm-redshift-connector
+    environment:
+      <<: *common-env
+      REDSHIFT_HOST: ${REDSHIFT_HOST:-localhost}
+      REDSHIFT_PORT: ${REDSHIFT_PORT:-5439}
+      REDSHIFT_DB: ${REDSHIFT_DB:-acme_dw}
+      REDSHIFT_USER: ${REDSHIFT_USER:-cpm_svc}
+      REDSHIFT_PASSWORD: ${REDSHIFT_PASSWORD:-}
+    <<: *service-defaults
+    volumes:
+      - ./redshift-connector/exported_policies:/app/exported_policies
+
+  # --- Frontend Service ---
+  frontend-service:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile
+    container_name: cpm-frontend
+    ports:
+      - "80:80"       # Web UI -> http://localhost
+    networks:
+      - cpm-net
+    depends_on:
+      - backend-service
+    restart: unless-stopped
+
+networks:
+  cpm-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+

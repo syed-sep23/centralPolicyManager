@@ -1,0 +1,27 @@
+# Implementation Progress: Open-Source Immuta Clone
+
+- [x] Phase 0: Project initialization, technical spec, and schema definition <!-- id: 0 -->
+    - [x] Create comprehensive architecture blueprint and technical spec (`immuta_clone_spec.md`) <!-- id: 1 -->
+    - [x] Set up base repo structure and Docker Compose orchestration <!-- id: 2 -->
+    - [x] Author normalized DB schemas (001_core_domain.sql, 002_metadata.sql, 003_policies.sql) <!-- id: 3 -->
+    - [x] Create seed data with sample domains, platforms, roles, users, and attributes <!-- id: 4 -->
+- [x] Phase 1: Shared Auth Library & Policy Authoring Service <!-- id: 5 -->
+    - [x] Implement self-contained JWT auth in `shared-libs/auth.py` <!-- id: 6 -->
+    - [x] Build FastAPI Policy Authoring Service (Models, Schemas, Routers, Business Logic) <!-- id: 7 -->
+- [x] Phase 2: Policy Validation Engine <!-- id: 8 -->
+    - [x] Implement OPA Rego validation and RBAC/ABAC evaluation rules <!-- id: 9 -->
+    - [x] Build FastAPI Policy Validation Service with 4-gate validation pipeline <!-- id: 10 -->
+- [x] Phase 3: Metadata Service & User/RBAC Service <!-- id: 11 -->
+    - [x] Build Metadata Service with platform/database/schema/table/column search and traversal <!-- id: 12 -->
+    - [x] Build User & RBAC Service with recursive role hierarchy resolution and ABAC attribute store <!-- id: 13 -->
+- [x] Phase 4: Policy Enforcement Service & Platform Connectors <!-- id: 14 -->
+    - [x] Build Enforcement Service with deployment tracking <!-- id: 15 -->
+    - [x] Build Snowflake Connector (dev stub + production DDL apply/revoke) <!-- id: 16 -->
+    - [x] Build Redshift Connector (dev stub + production RLS/GRANT apply/revoke) <!-- id: 17 -->
+- [x] Phase 5: React + Mantine UI Frontend <!-- id: 18 -->
+    - [x] Configure Vite + React + Mantine UI v7 with dark theme <!-- id: 19 -->
+    - [x] Build responsive Layout (Sidebar, Header, Theme toggler) <!-- id: 20 -->
+    - [x] Build Login, Dashboard, Policies List, Policy Studio wizard, Detail, Catalog, and Roles views <!-- id: 21 -->
+- [x] Phase 6: Observability, Infrastructure & Verification <!-- id: 22 -->
+    - [x] Configure Traefik routing, Prometheus scrape targets, Temporal config, and .env <!-- id: 23 -->
+    - [x] Provide full documentation in `README.md` and `walkthrough.md` <!-- id: 24 -->

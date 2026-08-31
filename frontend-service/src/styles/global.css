@@ -1,0 +1,105 @@
+/* ─── Global Styles — Immuta Clone (Dark Mode Premium UI) ──────────────────── */
+
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sidebar-width: 260px;
+  --header-height: 60px;
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar styling ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.6); }
+
+/* ─── Gradient text utility ───────────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 50%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Glass card effect ───────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Animated gradient background for hero sections ─────────────────────── */
+.hero-gradient {
+  background: radial-gradient(ellipse at top left, rgba(109, 40, 217, 0.15) 0%, transparent 50%),
+              radial-gradient(ellipse at bottom right, rgba(79, 70, 229, 0.1) 0%, transparent 50%);
+}
+
+/* ─── Status badge colours ────────────────────────────────────────────────── */
+.status-draft        { --badge-color: #6b7280; }
+.status-validated    { --badge-color: #10b981; }
+.status-enforced     { --badge-color: #7c3aed; }
+.status-deploying    { --badge-color: #f59e0b; }
+.status-failed       { --badge-color: #ef4444; }
+.status-deprecated   { --badge-color: #374151; }
+
+/* ─── Sidebar nav link active state ──────────────────────────────────────── */
+.nav-link-active {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(79, 70, 229, 0.1));
+  border-left: 3px solid #7c3aed;
+}
+
+/* ─── Code / Rego display ─────────────────────────────────────────────────── */
+.code-block {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+/* ─── Pulse animation for deploying status ───────────────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+}
+
+.pulse-deploying {
+  animation: pulse-glow 2s infinite;
+}
+
+/* ─── Fade in animation ───────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.3s ease forwards;
+}
+
+/* ─── Table row hover ─────────────────────────────────────────────────────── */
+.mantine-Table-tr:hover {
+  background: rgba(124, 58, 237, 0.06) !important;
+  transition: background var(--transition-fast);
+}
