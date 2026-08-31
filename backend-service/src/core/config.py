@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://cpm_user:cpm_secret_2024@postgresql:5432/cpm_db"
+    DATABASE_URL: str = "postgresql+asyncpg://ces_user:ces_secret_2024@postgresql:5432/ces_db"
 
     # JWT Auth
     SECRET_KEY: str = "dev-secret-key-change-in-production-at-least-32-chars"

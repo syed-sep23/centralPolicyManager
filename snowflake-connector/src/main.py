@@ -15,11 +15,11 @@ log = structlog.get_logger()
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    DATABASE_URL: str = "postgresql+asyncpg://cpm_user:cpm_secret_2024@localhost:5432/cpm_db"
+    DATABASE_URL: str = "postgresql+asyncpg://ces_user:ces_secret_2024@localhost:5432/ces_db"
     SNOWFLAKE_ACCOUNT: str = "demo.us-east-1"
-    SNOWFLAKE_USER: str = "cpm_svc"
+    SNOWFLAKE_USER: str = "ces_svc"
     SNOWFLAKE_PASSWORD: str = ""
-    SNOWFLAKE_WAREHOUSE: str = "CPM_WH"
+    SNOWFLAKE_WAREHOUSE: str = "CES_WH"
     SNOWFLAKE_ROLE: str = "SYSADMIN"
     SECRET_KEY: str = "dev-secret-key"
     LOG_LEVEL: str = "INFO"
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     yield
     await engine.dispose()
 
-app = FastAPI(title="Central Policy Management (CPM) — Snowflake Connector", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Central Entitlement Service (CES) — Snowflake Connector", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class ApplyRequest(BaseModel):

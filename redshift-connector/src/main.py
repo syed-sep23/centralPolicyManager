@@ -14,11 +14,11 @@ log = structlog.get_logger()
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    DATABASE_URL: str = "postgresql+asyncpg://cpm_user:cpm_secret_2024@localhost:5432/cpm_db"
+    DATABASE_URL: str = "postgresql+asyncpg://ces_user:ces_secret_2024@localhost:5432/ces_db"
     REDSHIFT_HOST: str = "localhost"
     REDSHIFT_PORT: int = 5439
     REDSHIFT_DB: str = "acme_dw"
-    REDSHIFT_USER: str = "cpm_svc"
+    REDSHIFT_USER: str = "ces_svc"
     REDSHIFT_PASSWORD: str = ""
     SECRET_KEY: str = "dev-secret-key"
     LOG_LEVEL: str = "INFO"
@@ -32,7 +32,7 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     yield
 
-app = FastAPI(title="Central Policy Management (CPM) — Redshift Connector", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Central Entitlement Service (CES) — Redshift Connector", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class ApplyRequest(BaseModel):

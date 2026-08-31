@@ -1,6 +1,6 @@
 """Policy Compiler & Exporter Service.
 
-Compiles Central Policy Management (CPM) policy JSON structures into native
+Compiles Central Entitlement Service (CES) policy JSON structures into native
 Snowflake DDL/SQL and Amazon Redshift DDL/SQL statements, and exports
 before/after artifacts into project directory for reference.
 """
@@ -116,7 +116,7 @@ def compile_snowflake_sql(raw_payload: dict[str, Any]) -> str:
         for s in rule.get("subjects", []):
             code = s.get("role_code") or (s.get("subject_type") if s.get("subject_type") != "ROLE" else None)
             if code:
-                role_codes.append(f"CPM_{code.upper()}")
+                role_codes.append(f"CES_{code.upper()}")
 
         resources = rule.get("resources", [])
         if not resources:
@@ -191,7 +191,7 @@ def compile_redshift_sql(raw_payload: dict[str, Any]) -> str:
         for s in rule.get("subjects", []):
             code = s.get("role_code") or (s.get("subject_type") if s.get("subject_type") != "ROLE" else None)
             if code:
-                role_codes.append(f"cpm_{code.lower()}")
+                role_codes.append(f"ces_{code.lower()}")
 
         resources = rule.get("resources", [])
         if not resources:

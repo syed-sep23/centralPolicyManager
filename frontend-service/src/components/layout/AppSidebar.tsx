@@ -35,8 +35,8 @@ export default function AppSidebar() {
             <IconBracketsContain size={18} color="white" />
           </Box>
           <Box>
-            <Text fw={700} size="sm" lh={1}>CPM Hub</Text>
-            <Text size="xs" c="dimmed" lh={1}>Policy Management</Text>
+            <Text fw={700} size="sm" lh={1}>CES Hub</Text>
+            <Text size="xs" c="dimmed" lh={1}>Entitlement Service</Text>
           </Box>
         </Group>
 

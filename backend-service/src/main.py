@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Central Policy Management (CPM) — Core Backend Service",
+        title="Central Entitlement Service (CES) — Core Backend Service",
         description="Unified REST API for policy governance, validation, metadata, user management, and deployment",
         version="1.0.0",
         lifespan=lifespan,

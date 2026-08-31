@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "backend-service"
 version = "1.0.0"
-description = "Central Policy Management (CPM) — Core Backend Service"
+description = "Central Entitlement Service (CES) — Core Backend Service"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

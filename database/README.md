@@ -1,6 +1,6 @@
-# Central Policy Management (CPM) — Database Scripts & Schema Guide
+# Central Entitlement Service (CES) — Database Scripts & Schema Guide
 
-This directory contains the PostgreSQL DDL schema definition scripts and sample seed data for the **Central Policy Management (CPM)** system (Immuta Clone).
+This directory contains the PostgreSQL DDL schema definition scripts and sample seed data for the **Central Entitlement Service (CES)** system (Immuta Clone).
 
 ---
 
@@ -24,15 +24,15 @@ database/
 
 | Order | Script File | Description | Key Tables Created |
 |---|---|---|---|
-| **1** | [`001_core_domain.sql`](file:///d:/project/Immuta_Clone/database/schema/001_core_domain.sql) | Identity & Access Management core models | `users`, `roles`, `user_roles`, `projects`, `project_members` |
-| **2** | [`002_metadata.sql`](file:///d:/project/Immuta_Clone/database/schema/002_metadata.sql) | Data Catalog & Metadata models | `data_sources`, `data_tables`, `data_columns`, `tag_definitions`, `object_tags` |
-| **3** | [`003_policies.sql`](file:///d:/project/Immuta_Clone/database/schema/003_policies.sql) | Policy Enforcement & Audit Trail | `policies`, `policy_rules`, `policy_applications`, `audit_logs`, `policy_change_history` |
+| **1** | [`001_core_domain.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/001_core_domain.sql) | Identity & Access Management core models | `users`, `roles`, `user_roles`, `projects`, `project_members` |
+| **2** | [`002_metadata.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/002_metadata.sql) | Data Catalog & Metadata models | `data_sources`, `data_tables`, `data_columns`, `tag_definitions`, `object_tags` |
+| **3** | [`003_policies.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/003_policies.sql) | Policy Enforcement & Audit Trail | `policies`, `policy_rules`, `policy_applications`, `audit_logs`, `policy_change_history` |
 
 ### 2. Seed Scripts (`database/seeds/`)
 
 | Script File | Description | Populated Data |
 |---|---|---|
-| [`001_sample_data.sql`](file:///d:/project/Immuta_Clone/database/seeds/001_sample_data.sql) | Sample setup for local dev | Admin/Data Engineer users, Snowflake & Redshift data sources, Customer & Transaction tables with tags, Masking policies |
+| [`001_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/001_sample_data.sql) | Sample setup for local dev | Admin/Data Engineer users, Snowflake & Redshift data sources, Customer & Transaction tables with tags, Masking policies |
 
 ---
 
@@ -45,10 +45,10 @@ Run the following commands in PowerShell from the repository root:
 ```powershell
 $psql = "C:\Program Files\PostgreSQL\18\pgAdmin 4\runtime\psql.exe"
 $dbUser = "postgres"
-$dbName = "cpm_db"
+$dbName = "ces_db"
 
 # 1. Create Database
-& $psql -h localhost -p 5432 -U $dbUser -c "CREATE DATABASE cpm_db;"
+& $psql -h localhost -p 5432 -U $dbUser -c "CREATE DATABASE ces_db;"
 
 # 2. Apply Schema Scripts
 & $psql -h localhost -p 5432 -U $dbUser -d $dbName -f "database\schema\001_core_domain.sql"
@@ -73,9 +73,9 @@ docker compose up -d postgresql
 
 ## 🔧 Database Connection Configuration
 
-Ensure your [`.env`](file:///d:/project/Immuta_Clone/.env) file matches your PostgreSQL database credentials:
+Ensure your [`.env`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/.env) file matches your PostgreSQL database credentials:
 
 ```env
-DATABASE_URL=postgresql+asyncpg://cpm_user:cpm_secret_2024@localhost:5432/cpm_db
-PG_PASSWORD=cpm_secret_2024
+DATABASE_URL=postgresql+asyncpg://ces_user:ces_secret_2024@localhost:5432/ces_db
+PG_PASSWORD=ces_secret_2024
 ```

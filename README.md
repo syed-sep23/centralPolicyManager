@@ -1,6 +1,6 @@
-# Central Policy Management (CPM)
+# Central Entitlement Service (CES)
 
-> **An open-source central policy management and data access governance platform** built with FastAPI, React + Mantine UI, OPA, Temporal, and PostgreSQL.
+> **An open-source central entitlement service and data access governance platform** built with FastAPI, React + Mantine UI, OPA, Temporal, and PostgreSQL.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-green.svg)](https://python.org)
@@ -17,7 +17,7 @@
 ### 1. Clone and configure
 ```bash
 git clone <repo-url>
-cd CPM
+cd CES
 cp .env.example .env
 ```
 
@@ -30,11 +30,11 @@ docker compose up -d --build
 
 | Service | URL / Port | Description |
 |---|---|---|
-| **CPM Portal UI** | http://localhost | React frontend (Nginx proxy) |
+| **CES Portal UI** | http://localhost | React frontend (Nginx proxy) |
 | **Core API Docs** | http://localhost:8000/docs | FastAPI Swagger UI |
 | **Temporal UI** | http://localhost:8088 | Workflow management |
 | **OPA** | http://localhost:8181 | Policy engine |
-| **PostgreSQL** | `127.0.0.1:5433` | Primary Database (`cpm_user` / `cpm_secret_2024`) |
+| **PostgreSQL** | `127.0.0.1:5433` | Primary Database (`ces_user` / `ces_secret_2024`) |
 
 ### 4. Login Credentials
 Default login credentials for POC mode:
@@ -49,14 +49,14 @@ Default login credentials for POC mode:
 
 | Service Name | Docker Container Name | Host Port | Description |
 |---|---|---|---|
-| **CPM Portal UI** | `cpm-frontend` | `http://localhost:80` | React Frontend Application |
-| **Core API Backend** | `cpm-backend-service` | `http://localhost:8000` | FastAPI Backend (Docs: `/docs`) |
-| **PostgreSQL Database** | `cpm-postgres` | `127.0.0.1:5433` | Primary Database (`cpm_db`) |
-| **Open Policy Agent** | `cpm-opa` | `http://localhost:8181` | Rego Policy Engine |
-| **Temporal Engine** | `cpm-temporal` | `localhost:7233` | Workflow Orchestration Engine |
-| **Temporal Web UI** | `cpm-temporal-ui` | `http://localhost:8088` | Workflow Monitoring Dashboard |
-| **Snowflake Connector** | `cpm-snowflake-connector` | Internal (`8006`) | Snowflake Connector Service |
-| **Redshift Connector** | `cpm-redshift-connector` | Internal (`8007`) | Redshift Connector Service |
+| **CES Portal UI** | `ces-frontend` | `http://localhost:80` | React Frontend Application |
+| **Core API Backend** | `ces-backend-service` | `http://localhost:8000` | FastAPI Backend (Docs: `/docs`) |
+| **PostgreSQL Database** | `ces-postgres` | `127.0.0.1:5433` | Primary Database (`ces_db`) |
+| **Open Policy Agent** | `ces-opa` | `http://localhost:8181` | Rego Policy Engine |
+| **Temporal Engine** | `ces-temporal` | `localhost:7233` | Workflow Orchestration Engine |
+| **Temporal Web UI** | `ces-temporal-ui` | `http://localhost:8088` | Workflow Monitoring Dashboard |
+| **Snowflake Connector** | `ces-snowflake-connector` | Internal (`8006`) | Snowflake Connector Service |
+| **Redshift Connector** | `ces-redshift-connector` | Internal (`8007`) | Redshift Connector Service |
 
 ---
 
@@ -87,13 +87,13 @@ Default login credentials for POC mode:
 ---
 
 ### 3. View Logs for All & Individual Containers
-## docker logs -f cpm-opa
+## docker logs -f ces-opa
 
 | Action | Command Example | Description |
 |---|---|---|
 | **Stream logs for ALL services** | `docker compose logs -f` | Tail and follow live stdout/stderr output across all containers. |
 | **Stream logs for 1 service** | `docker compose logs -f backend-service` | Live follow output for a specific container service. |
-| **View last N lines for container** | `docker logs cpm-backend-service --tail 100` | View the last 100 log lines of a specific container. |
+| **View last N lines for container** | `docker logs ces-backend-service --tail 100` | View the last 100 log lines of a specific container. |
 | **View logs with timestamps** | `docker compose logs -f --timestamps backend-service` | Include UTC timestamps in log outputs. |
 
 ---
@@ -102,9 +102,9 @@ Default login credentials for POC mode:
 
 | Action | Command Example | Description |
 |---|---|---|
-| **Connect to PostgreSQL in container** | `docker exec -it cpm-postgres psql -U cpm_user -d cpm_db` | Interactive `psql` shell inside PostgreSQL container. |
-| **Shell inside backend container** | `docker exec -it cpm-backend-service sh` | Open interactive shell inside backend container context. |
-| **Load sample seed data** | `Get-Content database/seeds/001_sample_data.sql -Raw \| docker exec -i cpm-postgres psql -U cpm_user -d cpm_db` | Manually run seed data into database. |
+| **Connect to PostgreSQL in container** | `docker exec -it ces-postgres psql -U ces_user -d ces_db` | Interactive `psql` shell inside PostgreSQL container. |
+| **Shell inside backend container** | `docker exec -it ces-backend-service sh` | Open interactive shell inside backend container context. |
+| **Load sample seed data** | `Get-Content database/seeds/001_sample_data.sql -Raw \| docker exec -i ces-postgres psql -U ces_user -d ces_db` | Manually run seed data into database. |
 
 ---
 

@@ -55,9 +55,9 @@ export default function LoginPage() {
           >
             <IconBracketsContain size={28} color="white" />
           </Box>
-          <Title order={2} className="gradient-text">Central Policy Management</Title>
+          <Title order={2} className="gradient-text">Central Entitlement Service</Title>
           <Text c="dimmed" size="sm" ta="center">
-            Open-source Data Access Control & Policy Governance (CPM)
+            Open-source Data Access Control & Policy Governance (CES)
           </Text>
         </Stack>
 

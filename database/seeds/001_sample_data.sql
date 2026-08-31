@@ -1,11 +1,11 @@
 -- ============================================================
 -- 001_sample_data.sql
--- Sample Seed Data for Central Policy Management POC
+-- Sample Seed Data for Central Entitlement Service POC
 -- ============================================================
 
 -- ─── Organizations ────────────────────────────────────────────────────────────
 INSERT INTO organizations (organization_id, org_name, org_code, description) VALUES
-(1, 'ACME Corporation', 'ACME', 'Primary enterprise tenant for Central Policy Management')
+(1, 'ACME Corporation', 'ACME', 'Primary enterprise tenant for Central Entitlement Service')
 ON CONFLICT (organization_id) DO NOTHING;
 
 -- ─── Data Domains ─────────────────────────────────────────────────────────────
@@ -249,13 +249,13 @@ ON CONFLICT (mapping_id) DO NOTHING;
 
 -- ─── Platform Role Mappings ───────────────────────────────────────────────────
 INSERT INTO platform_role_mappings (mapping_id, platform_id, internal_role_id, platform_role_name) VALUES
-(1, 1, 1, 'CPM_VIEWER'),        -- DATA_VIEWER → Snowflake CPM_VIEWER
-(2, 1, 2, 'CPM_ANALYST'),       -- DATA_ANALYST → Snowflake CPM_ANALYST
-(3, 1, 3, 'CPM_ENGINEER'),      -- DATA_ENGINEER → Snowflake CPM_ENGINEER
-(4, 1, 6, 'CPM_FINANCE_ANALYST'),
-(5, 2, 1, 'cpm_viewer'),        -- DATA_VIEWER → Redshift cpm_viewer
-(6, 2, 2, 'cpm_analyst'),
-(7, 2, 6, 'cpm_finance_analyst')
+(1, 1, 1, 'CES_VIEWER'),        -- DATA_VIEWER → Snowflake CES_VIEWER
+(2, 1, 2, 'CES_ANALYST'),       -- DATA_ANALYST → Snowflake CES_ANALYST
+(3, 1, 3, 'CES_ENGINEER'),      -- DATA_ENGINEER → Snowflake CES_ENGINEER
+(4, 1, 6, 'CES_FINANCE_ANALYST'),
+(5, 2, 1, 'ces_viewer'),        -- DATA_VIEWER → Redshift ces_viewer
+(6, 2, 2, 'ces_analyst'),
+(7, 2, 6, 'ces_finance_analyst')
 ON CONFLICT (mapping_id) DO NOTHING;
 
 -- ─── Sample Policies, Versions & Rules ───────────────────────────────────────

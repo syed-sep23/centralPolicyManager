@@ -12,7 +12,7 @@ export default function AppHeader({ opened, toggle }: AppHeaderProps) {
       <Group>
         <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
         <Text visibleFrom="sm" size="sm" c="dimmed">
-          Central Policy Management (CPM)
+          Central Entitlement Service (CES)
         </Text>
       </Group>
 
