@@ -47,7 +47,6 @@ class ApplyResponse(BaseModel):
     applied_constructs: list[str]
     skipped: bool = False
     message: str = ""
-    sql_export_path: Optional[str] = None
 
 @app.get("/health")
 async def health():
@@ -55,25 +54,13 @@ async def health():
 
 @app.post("/api/v1/apply", response_model=ApplyResponse)
 async def apply_policy(body: ApplyRequest):
-    sql_export_path = None
-    if body.sql_ddl:
-        try:
-            out_dir = Path("exported_policies") / f"policy_{body.policy_id}_v{body.version_id}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_file = out_dir / f"redshift_v{body.version_id}.sql"
-            out_file.write_text(body.sql_ddl, encoding="utf-8")
-            sql_export_path = str(out_file)
-            log.info("redshift.sql_exported", path=sql_export_path)
-        except Exception as err:
-            log.warning("redshift.sql_export_failed", error=str(err))
-
     if not settings.REDSHIFT_PASSWORD:
         log.warning("redshift.credentials_not_configured — stub response")
-        msg = f"Native Redshift DDL saved to redshift-connector/{sql_export_path}" if sql_export_path else "Redshift credentials not configured"
         return ApplyResponse(
-            success=True, applied_constructs=[], skipped=True,
-            message=msg,
-            sql_export_path=sql_export_path,
+            success=True,
+            applied_constructs=[],
+            skipped=True,
+            message="Redshift credentials not configured (stub mode)",
         )
     try:
         import psycopg2
@@ -82,7 +69,6 @@ async def apply_policy(body: ApplyRequest):
             dbname=settings.REDSHIFT_DB, user=settings.REDSHIFT_USER,
             password=settings.REDSHIFT_PASSWORD,
         )
-        # TODO: translate rules → CREATE RLS POLICY / GRANT / ATTACH RLS POLICY
         applied = []
         conn.close()
         return ApplyResponse(success=True, applied_constructs=applied)

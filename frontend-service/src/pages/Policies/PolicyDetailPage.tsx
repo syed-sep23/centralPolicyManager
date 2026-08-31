@@ -53,7 +53,18 @@ export default function PolicyDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['deploy-status', policyId] })
       queryClient.invalidateQueries({ queryKey: ['opa-audit', policyId] })
       queryClient.invalidateQueries({ queryKey: ['compiled-policy', policyId] })
-      notifications.show({ message: 'Submitted for validation & deployment', color: 'violet' })
+      notifications.show({ title: 'OPA Gate Passed ✅', message: 'OPA Decision: Positive. Temporal workflow deployment started.', color: 'teal' })
+    },
+    onError: (err: any) => {
+      queryClient.invalidateQueries({ queryKey: ['policy', policyId] })
+      queryClient.invalidateQueries({ queryKey: ['opa-audit', policyId] })
+      const errorMsg = err.response?.data?.detail || 'OPA Policy Evaluation Failed'
+      notifications.show({
+        title: 'OPA Validation Gate Rejected ❌',
+        message: errorMsg,
+        color: 'red',
+        autoClose: 10000,
+      })
     },
   })
 
@@ -310,72 +321,83 @@ export default function PolicyDetailPage() {
 
         <Tabs.Panel value="deployments" pt="md">
           <Stack gap="md">
-            <Card className="glass-card" p="md" radius="lg">
-              <Text fw={600} size="sm" mb="xs">Target Platform Deployments Status</Text>
-              {(deployStatus?.data ?? []).length === 0 ? (
-                <Text c="dimmed" ta="center" py="xl">No deployments triggered yet. Click "Submit & Deploy" to execute compiler and target deployment.</Text>
-              ) : (
-                <Stack gap="xs">
-                  {(deployStatus?.data ?? []).map((d: any) => (
-                    <Paper key={d.target_id} p="xs" radius="md" style={{ background: 'rgba(0,0,0,0.2)' }}>
-                      <Group justify="space-between" mb={4}>
-                        <Group gap="xs">
-                          <Badge color="gray" variant="outline" size="xs">#{d.platform_id}</Badge>
-                          <Badge color="blue" variant="light" size="xs">{d.platform_code}</Badge>
-                          <Badge color={d.workflow_status === 'COMPLETED' ? 'violet' : d.workflow_status === 'RUNNING' ? 'yellow' : d.workflow_status === 'TERMINATED' || d.workflow_status === 'FAILED' ? 'red' : 'gray'} size="xs">
-                            Temporal WF: {d.workflow_status ?? 'COMPLETED'}
-                          </Badge>
-                          <Badge color={d.deployment_status === 'SUCCESS' ? 'green' : d.deployment_status === 'FAILED' ? 'red' : 'yellow'} size="xs">
-                            Platform: {d.deployment_status}
-                          </Badge>
-                          {d.version_number && (
-                            <Badge color="gray" size="xs" variant="dot">v{d.version_number}.0</Badge>
+            <Accordion variant="separated" radius="lg" defaultValue="target-platform-deployments">
+              <Accordion.Item value="target-platform-deployments" className="glass-card" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                <Accordion.Control>
+                  <Group justify="space-between" pr="xs">
+                    <Text fw={600} size="sm">Target Platform Deployments Status</Text>
+                    <Badge color="violet" variant="light" size="xs">
+                      {(deployStatus?.data ?? []).length} Platforms
+                    </Badge>
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  {(deployStatus?.data ?? []).length === 0 ? (
+                    <Text c="dimmed" ta="center" py="xl">
+                      No deployments triggered yet. Click "Submit & Deploy" to execute compiler and target deployment.
+                    </Text>
+                  ) : (
+                    <Stack gap="xs" mt="xs">
+                      {(deployStatus?.data ?? []).map((d: any, idx: number) => (
+                        <Paper key={d.target_id || idx} p="sm" radius="md" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <Group justify="space-between" mb={6}>
+                            <Group gap="xs" wrap="wrap">
+                              <Badge color="gray" variant="outline" size="xs">#{d.platform_id}</Badge>
+                              <Badge color="blue" variant="light" size="xs">{d.platform_code}</Badge>
+                              <Badge color={d.workflow_status === 'COMPLETED' ? 'violet' : d.workflow_status === 'RUNNING' ? 'yellow' : 'red'} size="xs">
+                                Temporal WF: {d.workflow_status ?? 'COMPLETED'}
+                              </Badge>
+                              <Badge color={d.deployment_status === 'SUCCESS' ? 'green' : d.deployment_status === 'FAILED' ? 'red' : 'yellow'} size="xs">
+                                Platform: {d.deployment_status}
+                              </Badge>
+                              {d.version_number && (
+                                <Badge color="gray" size="xs" variant="dot">v{d.version_number}.0</Badge>
+                              )}
+                            </Group>
+                            {d.deployed_at && <Text size="xs" c="dimmed">{new Date(d.deployed_at).toLocaleString()}</Text>}
+                          </Group>
+                          <Group gap="md" mb={d.error_message ? 6 : 0}>
+                            {d.temporal_workflow_id && (
+                              <Text size="xs">
+                                Temporal Workflow ID:{' '}
+                                <Anchor
+                                  href={`http://localhost:8088/namespaces/default/workflows/${d.temporal_workflow_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <Code size="xs" color="violet">{d.temporal_workflow_id}</Code>
+                                </Anchor>
+                              </Text>
+                            )}
+                            {d.version_label && (
+                              <Text size="xs" c="dimmed">Version Label: {d.version_label}</Text>
+                            )}
+                          </Group>
+                          {d.error_message && (
+                            <Box mt={4}>
+                              <Text size="xs" fw={500} c="dimmed" mb={2}>Connector Execution Message:</Text>
+                              <Code block style={{ background: 'rgba(0,0,0,0.4)', color: d.deployment_status === 'SUCCESS' ? '#4ade80' : '#f87171', fontSize: 12 }}>
+                                {d.error_message}
+                              </Code>
+                            </Box>
                           )}
-                          {d.temporal_workflow_id && (
-                            <Anchor
-                              href={`http://localhost:8088/namespaces/default/workflows/${d.temporal_workflow_id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              size="xs"
-                            >
-                              <Code size="xs" color="violet" style={{ cursor: 'pointer' }}>ID: {d.temporal_workflow_id}</Code>
-                            </Anchor>
-                          )}
-                        </Group>
-                        {d.deployed_at && <Text size="xs" c="dimmed">{new Date(d.deployed_at).toLocaleString()}</Text>}
-                      </Group>
-                      {d.error_message && (
-                        <Text size="xs" c={d.deployment_status === 'SUCCESS' ? 'green' : 'yellow'} mt={2}>
-                          {d.error_message}
-                        </Text>
-                      )}
-                    </Paper>
-                  ))}
-                </Stack>
-              )}
-            </Card>
+                        </Paper>
+                      ))}
+                    </Stack>
+                  )}
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
 
             {/* Exported Policy Artifacts (Before & After Conversion) */}
             {compiledData?.data && (
               <Card className="glass-card" p="lg" radius="lg">
                 <Group justify="space-between" mb="sm">
                   <Box>
-                    <Text fw={600} size="md">Exported Policy Artifacts & Converted Platform SQL DDL</Text>
-                    <Stack gap={2} mt={4}>
-                      <Text size="xs" c="dimmed">
-                        Central Export Directory: <Code size="xs" color="gray">{compiledData.data.export_dir}</Code>
-                      </Text>
-                      {compiledData.data.snowflake_sql_path && (
-                        <Text size="xs" c="dimmed">
-                          Snowflake Connector Service Path: <Code size="xs" color="blue">{compiledData.data.snowflake_sql_path}</Code>
-                        </Text>
-                      )}
-                      {compiledData.data.redshift_sql_path && (
-                        <Text size="xs" c="dimmed">
-                          Redshift Connector Service Path: <Code size="xs" color="red">{compiledData.data.redshift_sql_path}</Code>
-                        </Text>
-                      )}
-                    </Stack>
+                    <Text fw={600} size="md">Compiled Platform SQL DDL & Raw Policy Statements</Text>
+                    <Text size="xs" c="dimmed" mt={2}>
+                      In-Memory Compiled Security DDL for Policy Version v{compiledData.data.raw_payload?.version_number ?? 1}.0
+                    </Text>
                   </Box>
                   <Badge color="violet" variant="light" size="sm">
                     Version v{compiledData.data.raw_payload?.version_number ?? 1}.0
@@ -385,13 +407,13 @@ export default function PolicyDetailPage() {
                 <Tabs defaultValue="snowflake" color="violet">
                   <Tabs.List mb="sm">
                     <Tabs.Tab value="snowflake" leftSection={<Code color="blue" size="xs">SF</Code>}>
-                      Snowflake SQL ({compiledData.data.snowflake_sql_filename})
+                      Snowflake SQL
                     </Tabs.Tab>
                     <Tabs.Tab value="redshift" leftSection={<Code color="red" size="xs">RS</Code>}>
-                      Redshift SQL ({compiledData.data.redshift_sql_filename})
+                      Redshift SQL
                     </Tabs.Tab>
                     <Tabs.Tab value="raw_json" leftSection={<Code color="yellow" size="xs">JSON</Code>}>
-                      Raw Policy JSON ({compiledData.data.raw_json_filename})
+                      Raw Policy JSON
                     </Tabs.Tab>
                   </Tabs.List>
 

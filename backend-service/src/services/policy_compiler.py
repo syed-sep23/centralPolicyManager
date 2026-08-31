@@ -14,8 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 
-# Export directory path in project workspace
-EXPORT_BASE_DIR = Path("exported_policies")
 
 
 async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[str, Any]:
@@ -235,7 +233,7 @@ def compile_redshift_sql(raw_payload: dict[str, Any]) -> str:
 
 
 async def export_and_compile_policy(policy_id: int, version_id: int, db: AsyncSession) -> dict[str, Any]:
-    """Fetch policy, compile to Snowflake & Redshift SQL, and save files to disk."""
+    """Fetch policy and compile to Snowflake & Redshift SQL in memory."""
     raw_payload = await fetch_policy_raw_payload(version_id, db)
     if not raw_payload:
         raise ValueError(f"Policy version {version_id} not found in DB")
@@ -243,54 +241,9 @@ async def export_and_compile_policy(policy_id: int, version_id: int, db: AsyncSe
     snowflake_sql = compile_snowflake_sql(raw_payload)
     redshift_sql = compile_redshift_sql(raw_payload)
 
-    # Create export target directory
-    out_dir = EXPORT_BASE_DIR / f"policy_{policy_id}_v{version_id}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    json_path = out_dir / f"raw_policy_v{version_id}.json"
-    sf_path = out_dir / f"snowflake_v{version_id}.sql"
-    rs_path = out_dir / f"redshift_v{version_id}.sql"
-
-    json_path.write_text(json.dumps(raw_payload, indent=2), encoding="utf-8")
-    sf_path.write_text(snowflake_sql, encoding="utf-8")
-    rs_path.write_text(redshift_sql, encoding="utf-8")
-
-    # Place copies in respective connector service directories
-    sf_conn_path_str = f"snowflake-connector/exported_policies/policy_{policy_id}_v{version_id}/snowflake_v{version_id}.sql"
-    rs_conn_path_str = f"redshift-connector/exported_policies/policy_{policy_id}_v{version_id}/redshift_v{version_id}.sql"
-
-    sf_target_dirs = [
-        Path("snowflake-connector/exported_policies") / f"policy_{policy_id}_v{version_id}",
-        Path("../snowflake-connector/exported_policies") / f"policy_{policy_id}_v{version_id}",
-        Path("/app/snowflake-connector/exported_policies") / f"policy_{policy_id}_v{version_id}",
-    ]
-    rs_target_dirs = [
-        Path("redshift-connector/exported_policies") / f"policy_{policy_id}_v{version_id}",
-        Path("../redshift-connector/exported_policies") / f"policy_{policy_id}_v{version_id}",
-        Path("/app/redshift-connector/exported_policies") / f"policy_{policy_id}_v{version_id}",
-    ]
-
-    for d in sf_target_dirs:
-        try:
-            d.mkdir(parents=True, exist_ok=True)
-            (d / f"snowflake_v{version_id}.sql").write_text(snowflake_sql, encoding="utf-8")
-        except Exception:
-            pass
-
-    for d in rs_target_dirs:
-        try:
-            d.mkdir(parents=True, exist_ok=True)
-            (d / f"redshift_v{version_id}.sql").write_text(redshift_sql, encoding="utf-8")
-        except Exception:
-            pass
-
-    log.info("policy_compiled_and_exported", out_dir=str(out_dir), sf_conn=sf_conn_path_str, rs_conn=rs_conn_path_str)
+    log.info("policy_compiled", policy_id=policy_id, version_id=version_id)
 
     return {
-        "export_dir": str(out_dir),
-        "raw_json_path": str(json_path),
-        "snowflake_sql_path": sf_conn_path_str,
-        "redshift_sql_path": rs_conn_path_str,
         "raw_payload": raw_payload,
         "snowflake_sql": snowflake_sql,
         "redshift_sql": redshift_sql,

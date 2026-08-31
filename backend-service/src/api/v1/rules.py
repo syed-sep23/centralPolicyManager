@@ -19,12 +19,24 @@ async def list_rules(
     db: AsyncSession = Depends(get_db),
 ):
     policy = (await db.execute(select(Policy).where(Policy.policy_id == policy_id))).scalar_one_or_none()
-    if not policy or not policy.current_version_id:
-        raise HTTPException(status_code=404, detail="Policy or version not found")
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    version_id = policy.current_version_id
+    if not version_id:
+        from src.models.models import PolicyVersion
+        ver_row = (await db.execute(
+            select(PolicyVersion.version_id).where(PolicyVersion.policy_id == policy_id).order_by(PolicyVersion.version_number.desc())
+        )).first()
+        if ver_row:
+            version_id = ver_row[0]
+
+    if not version_id:
+        raise HTTPException(status_code=404, detail="Policy version not found")
 
     stmt = (
         select(PolicyRule)
-        .where(PolicyRule.version_id == policy.current_version_id)
+        .where(PolicyRule.version_id == version_id)
         .options(
             selectinload(PolicyRule.subjects),
             selectinload(PolicyRule.actions),
@@ -44,11 +56,23 @@ async def add_rule(
     db: AsyncSession = Depends(get_db),
 ):
     policy = (await db.execute(select(Policy).where(Policy.policy_id == policy_id))).scalar_one_or_none()
-    if not policy or not policy.current_version_id:
-        raise HTTPException(status_code=404, detail="Policy not found or no draft version")
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    version_id = policy.current_version_id
+    if not version_id:
+        from src.models.models import PolicyVersion
+        ver_row = (await db.execute(
+            select(PolicyVersion.version_id).where(PolicyVersion.policy_id == policy_id).order_by(PolicyVersion.version_number.desc())
+        )).first()
+        if ver_row:
+            version_id = ver_row[0]
+
+    if not version_id:
+        raise HTTPException(status_code=404, detail="Policy version not found")
 
     rule = PolicyRule(
-        version_id=policy.current_version_id,
+        version_id=version_id,
         rule_name=body.rule_name,
         rule_description=body.rule_description,
         rule_order=body.rule_order,

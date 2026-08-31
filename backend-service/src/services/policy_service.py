@@ -26,6 +26,7 @@ class PolicyService:
         status_filter: str | None = None,
         domain_id: int | None = None,
     ) -> tuple[int, list[Policy]]:
+        from sqlalchemy import text
         stmt = select(Policy).where(Policy.organization_id == org_id)
         if status_filter:
             stmt = stmt.where(Policy.status == status_filter)
@@ -34,6 +35,39 @@ class PolicyService:
 
         total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
         items = (await self.db.execute(stmt.offset((page - 1) * size).limit(size))).scalars().all()
+
+        for p in items:
+            ver_status = None
+            if p.current_version_id:
+                ver_row = (await self.db.execute(
+                    text("SELECT status FROM policy_versions WHERE version_id = :v"),
+                    {"v": p.current_version_id}
+                )).first()
+                if ver_row:
+                    ver_status = ver_row[0]
+
+            # OPA Status: check version status and main policy status
+            if ver_status == "REJECTED" or p.status == "FAILED_VALIDATION":
+                p.opa_status = "REJECTED"
+            elif ver_status in ("APPROVED", "DEPLOYED") or p.status in ("VALIDATED", "ENFORCED"):
+                p.opa_status = "PASSED"
+            else:
+                p.opa_status = "PENDING"
+
+            # Deployment Status
+            if ver_status == "REJECTED" or p.status == "FAILED_VALIDATION":
+                p.deployment_status = "ABORTED"
+            elif p.status == "ENFORCED":
+                p.deployment_status = "ENFORCED"
+            elif p.status == "DEPLOYING":
+                p.deployment_status = "DEPLOYING"
+            elif p.status == "DEPRECATED":
+                p.deployment_status = "DEPRECATED"
+            elif p.status == "ROLLBACK":
+                p.deployment_status = "ROLLBACK"
+            else:
+                p.deployment_status = "NOT DEPLOYED"
+
         return total, list(items)
 
     async def create_policy(self, data: PolicyCreate, owner_user_id: int, org_id: int) -> Policy:

@@ -104,7 +104,7 @@ Default login credentials for POC mode:
 |---|---|---|
 | **Connect to PostgreSQL in container** | `docker exec -it ces-postgres psql -U ces_user -d ces_db` | Interactive `psql` shell inside PostgreSQL container. |
 | **Shell inside backend container** | `docker exec -it ces-backend-service sh` | Open interactive shell inside backend container context. |
-| **Load sample seed data** | `Get-Content database/seeds/001_sample_data.sql -Raw \| docker exec -i ces-postgres psql -U ces_user -d ces_db` | Manually run seed data into database. |
+| **Load sample seed data** | `Get-Content database/seeds/004_sample_data.sql -Raw \| docker exec -i ces-postgres psql -U ces_user -d ces_db` | Manually run seed data into database. |
 
 ---
 

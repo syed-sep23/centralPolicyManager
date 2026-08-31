@@ -13,7 +13,7 @@ database/
 │   ├── 002_metadata.sql       # Data Catalog: Data Sources, Schemas, Tables, Columns
 │   └── 003_policies.sql       # Policy Engine: Masking Policies, Row-Level Security, Rules, Auditing
 └── seeds/
-    └── 001_sample_data.sql    # Sample Seed Data for testing and development
+    └── 004_sample_data.sql    # Sample Seed Data for testing and development
 ```
 
 ---
@@ -32,7 +32,7 @@ database/
 
 | Script File | Description | Populated Data |
 |---|---|---|
-| [`001_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/001_sample_data.sql) | Sample setup for local dev | Admin/Data Engineer users, Snowflake & Redshift data sources, Customer & Transaction tables with tags, Masking policies |
+| [`004_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/004_sample_data.sql) | Sample setup for local dev | Admin/Data Engineer users, Snowflake & Redshift data sources, Customer & Transaction tables with tags, Masking policies |
 
 ---
 
@@ -56,7 +56,7 @@ $dbName = "ces_db"
 & $psql -h localhost -p 5432 -U $dbUser -d $dbName -f "database\schema\003_policies.sql"
 
 # 3. Apply Seed Data
-& $psql -h localhost -p 5432 -U $dbUser -d $dbName -f "database\seeds\001_sample_data.sql"
+& $psql -h localhost -p 5432 -U $dbUser -d $dbName -f "database\seeds\004_sample_data.sql"
 ```
 
 ---

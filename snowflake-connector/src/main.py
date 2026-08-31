@@ -59,7 +59,6 @@ class ApplyResponse(BaseModel):
     applied_constructs: list[str]
     skipped: bool = False
     message: str = ""
-    sql_export_path: Optional[str] = None
 
 @app.get("/health")
 async def health():
@@ -71,29 +70,14 @@ async def health():
 async def apply_policy(body: ApplyRequest):
     """
     Translate policy rules into Snowflake-native DDL and apply.
-    If Snowflake credentials are not configured, saves DDL to connector directory and returns dev response.
     """
-    sql_export_path = None
-    if body.sql_ddl:
-        try:
-            out_dir = Path("exported_policies") / f"policy_{body.policy_id}_v{body.version_id}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_file = out_dir / f"snowflake_v{body.version_id}.sql"
-            out_file.write_text(body.sql_ddl, encoding="utf-8")
-            sql_export_path = str(out_file)
-            log.info("snowflake.sql_exported", path=sql_export_path)
-        except Exception as err:
-            log.warning("snowflake.sql_export_failed", error=str(err))
-
     if not settings.SNOWFLAKE_PASSWORD:
         log.warning("snowflake.credentials_not_configured — returning stub response")
-        msg = f"Native Snowflake DDL saved to snowflake-connector/{sql_export_path}" if sql_export_path else "Snowflake credentials not configured"
         return ApplyResponse(
             success=True,
             applied_constructs=[],
             skipped=True,
-            message=msg,
-            sql_export_path=sql_export_path,
+            message="Snowflake credentials not configured (stub mode)",
         )
 
     # Production path: use snowflake-connector-python
@@ -106,8 +90,6 @@ async def apply_policy(body: ApplyRequest):
             warehouse=settings.SNOWFLAKE_WAREHOUSE,
             role=settings.SNOWFLAKE_ROLE,
         )
-        # TODO: load policy rules from DB and translate to DDL
-        # See translators/ for row_filter_translator, masking_translator, grant_translator
         applied = []
         conn.close()
         log.info("snowflake.policy_applied", policy_id=body.policy_id, version_id=body.version_id)

@@ -153,6 +153,8 @@ class PolicyRead(BaseModel):
     enforce_mode:       str
     current_version_id: Optional[int]
     status:             str
+    opa_status:         Optional[str] = None
+    deployment_status:  Optional[str] = None
     effective_date:     Optional[date]
     expiry_date:        Optional[date]
     created_at:         datetime

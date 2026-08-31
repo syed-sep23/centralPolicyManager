@@ -61,7 +61,6 @@ async def register(body: UserCreate, db: AsyncSession = Depends(get_db)):
         username=body.username,
         email=body.email,
         display_name=body.display_name,
-        hashed_password=hash_password(body.password),
         department=body.department,
         job_title=body.job_title,
     )
@@ -82,12 +81,10 @@ async def me(
     if not user:
         return UserRead(
             user_id=1,
-            organization_id=1,
             username=current_user.username or "admin",
             email="admin@acme.com",
             display_name="System Admin",
             department="IT",
-            job_title="Platform Administrator",
             is_active=True,
         )
     return user

@@ -24,10 +24,13 @@ services:
     environment:
       POSTGRES_DB: ces_db
       POSTGRES_USER: ces_user
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-ces_secret_2024}
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./database/schema:/docker-entrypoint-initdb.d:ro
+      - ./database/schema/001_core_domain.sql:/docker-entrypoint-initdb.d/001_core_domain.sql:ro
+      - ./database/schema/002_metadata.sql:/docker-entrypoint-initdb.d/002_metadata.sql:ro
+      - ./database/schema/003_policies.sql:/docker-entrypoint-initdb.d/003_policies.sql:ro
+      - ./database/seeds/004_sample_data.sql:/docker-entrypoint-initdb.d/004_sample_data.sql:ro
     ports:
       - "5433:5432"
     networks:
@@ -60,7 +63,7 @@ services:
       DB: postgres12
       DB_PORT: 5432
       POSTGRES_USER: ces_user
-      POSTGRES_PWD: ${PG_PASSWORD}
+      POSTGRES_PWD: ${PG_PASSWORD:-ces_secret_2024}
       POSTGRES_SEEDS: postgresql
       DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/docker.yaml
     volumes:
@@ -105,10 +108,6 @@ services:
       SNOWFLAKE_CONNECTOR_URL: ${SNOWFLAKE_CONNECTOR_URL}
       REDSHIFT_CONNECTOR_URL: ${REDSHIFT_CONNECTOR_URL}
     <<: *service-defaults
-    volumes:
-      - ./exported_policies:/app/exported_policies
-      - ./snowflake-connector/exported_policies:/app/snowflake-connector/exported_policies
-      - ./redshift-connector/exported_policies:/app/redshift-connector/exported_policies
     depends_on:
       postgresql:
         condition: service_healthy
@@ -129,8 +128,6 @@ services:
       SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-CES_WH}
       SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE:-SYSADMIN}
     <<: *service-defaults
-    volumes:
-      - ./snowflake-connector/exported_policies:/app/exported_policies
 
   # --- Redshift Connector ---
   redshift-connector:
@@ -146,8 +143,6 @@ services:
       REDSHIFT_USER: ${REDSHIFT_USER:-ces_svc}
       REDSHIFT_PASSWORD: ${REDSHIFT_PASSWORD:-}
     <<: *service-defaults
-    volumes:
-      - ./redshift-connector/exported_policies:/app/exported_policies
 
   # --- Frontend Service ---
   frontend-service:

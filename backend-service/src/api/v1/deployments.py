@@ -30,7 +30,6 @@ class DeployResponse(BaseModel):
     policy_id: int
     version_id: int
     status: str
-    export_dir: str
     platforms: list[dict]
 
 
@@ -42,9 +41,22 @@ async def execute_policy_deployment(
 ) -> DeployResponse:
     deployment_id = f"dep-{uuid.uuid4().hex[:8]}"
 
-    # 1. Compile policy to native Snowflake & Redshift SQL and export to disk
+    # 0. ALWAYS check OPA decision first — only if OPA decision is positive (is_valid=True), proceed to Temporal & connector deployment
+    from src.api.v1.validation import validate_policy, ValidationRequest
+    val_res = await validate_policy(ValidationRequest(policy_id=policy_id, version_id=version_id), db)
+    if not val_res.is_valid:
+        err_details = "; ".join(val_res.errors) if val_res.errors else "Policy failed OPA validation checks"
+        await db.execute(
+            text("UPDATE policies SET status = 'FAILED_VALIDATION' WHERE policy_id = :p"),
+            {"p": policy_id}
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"OPA Policy Validation Rejected (Decision: Negative). Violations: {err_details}. Temporal workflow deployment aborted.",
+        )
+
+    # 1. Compile policy to native Snowflake & Redshift SQL (in-memory)
     compile_result = await export_and_compile_policy(policy_id, version_id, db)
-    export_dir = compile_result["export_dir"]
 
     if not target_platform_ids:
         rows = (await db.execute(
@@ -81,7 +93,6 @@ async def execute_policy_deployment(
         workflow_input = {
             "policy_id": policy_id,
             "version_id": version_id,
-            "export_dir": export_dir,
             "targets": [
                 {
                     "platform_code": p["platform_code"],
@@ -107,8 +118,6 @@ async def execute_policy_deployment(
     for p in platforms:
         p_code = p["platform_code"]
         connector_url = CONNECTOR_MAP.get(p_code, lambda: None)()
-        sql_file = f"snowflake_v{version_id}.sql" if p_code == "SNOWFLAKE" else f"redshift_v{version_id}.sql"
-        file_ref = f"{export_dir}/{sql_file}"
         sql_ddl = compile_result["snowflake_sql"] if p_code == "SNOWFLAKE" else compile_result["redshift_sql"]
 
         p_status = {
@@ -134,16 +143,16 @@ async def execute_policy_deployment(
                 result = resp.json()
                 if resp.status_code == 200 and result.get("success"):
                     p_status["status"] = "SUCCESS"
-                    p_status["error_message"] = f"Successfully deployed native DDL to {p_code}"
+                    p_status["error_message"] = result.get("message") or f"Successfully deployed native DDL to {p_code}"
                 else:
                     p_status["status"] = "FAILED"
                     p_status["error_message"] = result.get("error") or f"Connector error (HTTP {resp.status_code})"
             except Exception as exc:
                 p_status["status"] = "CONNECTOR_OFFLINE"
-                p_status["error_message"] = f"Connector endpoint {connector_url} offline. Converted DDL saved to {file_ref}"
+                p_status["error_message"] = f"Connector endpoint {connector_url} offline."
         else:
             p_status["status"] = "NO_CONNECTOR"
-            p_status["error_message"] = f"No connector configured. Native DDL saved to {file_ref}"
+            p_status["error_message"] = f"No connector configured for {p_code}."
 
         platform_statuses.append(p_status)
 
@@ -168,14 +177,12 @@ async def execute_policy_deployment(
         text("UPDATE policy_versions SET status = 'DEPLOYED', deployed_at = NOW() WHERE version_id = :v"),
         {"v": version_id}
     )
-    await db.commit()
 
     return DeployResponse(
         deployment_id=deployment_id,
         policy_id=policy_id,
         version_id=version_id,
         status="COMPLETED" if all_success else "PARTIAL_SUCCESS",
-        export_dir=export_dir,
         platforms=platform_statuses,
     )
 
@@ -247,19 +254,9 @@ async def get_compiled_policy_artifacts(policy_id: int, version_id: Optional[int
     snowflake_sql = compile_snowflake_sql(raw_payload)
     redshift_sql = compile_redshift_sql(raw_payload)
 
-    export_dir = f"exported_policies/policy_{policy_id}_v{version_id}"
-    sf_sql_path = f"snowflake-connector/exported_policies/policy_{policy_id}_v{version_id}/snowflake_v{version_id}.sql"
-    rs_sql_path = f"redshift-connector/exported_policies/policy_{policy_id}_v{version_id}/redshift_v{version_id}.sql"
-
     return {
         "policy_id": policy_id,
         "version_id": version_id,
-        "export_dir": export_dir,
-        "snowflake_sql_path": sf_sql_path,
-        "redshift_sql_path": rs_sql_path,
-        "raw_json_filename": f"raw_policy_v{version_id}.json",
-        "snowflake_sql_filename": f"snowflake_v{version_id}.sql",
-        "redshift_sql_filename": f"redshift_v{version_id}.sql",
         "raw_payload": raw_payload,
         "snowflake_sql": snowflake_sql,
         "redshift_sql": redshift_sql,

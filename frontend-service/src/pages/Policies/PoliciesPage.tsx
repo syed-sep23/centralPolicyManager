@@ -17,6 +17,46 @@ const STATUS_COLORS: Record<string, string> = {
   DEPLOYING: 'yellow', ENFORCED: 'violet', DEPRECATED: 'dark', ROLLBACK: 'orange',
 }
 
+function renderOpaStatus(p: any) {
+  const status = p.opa_status || p.status
+  switch (status) {
+    case 'PASSED':
+    case 'ENFORCED':
+    case 'VALIDATED':
+      return <Badge color="teal" variant="light" size="sm">PASSED ✅</Badge>
+    case 'REJECTED':
+    case 'FAILED_VALIDATION':
+      return <Badge color="red" variant="light" size="sm">REJECTED ❌</Badge>
+    case 'DEPLOYING':
+      return <Badge color="teal" variant="light" size="sm">PASSED ✅</Badge>
+    case 'PENDING':
+    case 'DRAFT':
+    default:
+      return <Badge color="gray" variant="outline" size="sm">PENDING</Badge>
+  }
+}
+
+function renderDeploymentStatus(p: any) {
+  const status = p.deployment_status || p.status
+  switch (status) {
+    case 'ENFORCED':
+      return <Badge color="violet" variant="light" size="sm">ENFORCED</Badge>
+    case 'DEPLOYING':
+      return <Badge color="yellow" variant="light" size="sm" className="pulse-deploying">DEPLOYING</Badge>
+    case 'ABORTED':
+    case 'FAILED_VALIDATION':
+      return <Badge color="red" variant="outline" size="sm">ABORTED</Badge>
+    case 'DEPRECATED':
+      return <Badge color="dark" variant="light" size="sm">DEPRECATED</Badge>
+    case 'ROLLBACK':
+      return <Badge color="orange" variant="light" size="sm">ROLLBACK</Badge>
+    case 'NOT DEPLOYED':
+    case 'DRAFT':
+    default:
+      return <Badge color="gray" variant="outline" size="sm">NOT DEPLOYED</Badge>
+  }
+}
+
 export default function PoliciesPage() {
   const navigate      = useNavigate()
   const queryClient   = useQueryClient()
@@ -41,7 +81,17 @@ export default function PoliciesPage() {
     mutationFn: (id: number) => policiesApi.submit(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
-      notifications.show({ message: 'Policy submitted for validation', color: 'violet' })
+      notifications.show({ title: 'OPA Gate Passed ✅', message: 'OPA Decision: Positive. Temporal deployment started.', color: 'teal' })
+    },
+    onError: (err: any) => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      const errorMsg = err.response?.data?.detail || 'OPA Policy Evaluation Failed'
+      notifications.show({
+        title: 'OPA Validation Gate Rejected ❌',
+        message: errorMsg,
+        color: 'red',
+        autoClose: 10000,
+      })
     },
   })
 
@@ -99,7 +149,8 @@ export default function PoliciesPage() {
               <Table.Th>Policy Name</Table.Th>
               <Table.Th>Code</Table.Th>
               <Table.Th>Mode</Table.Th>
-              <Table.Th>Status</Table.Th>
+              <Table.Th>OPA Status</Table.Th>
+              <Table.Th>Deployment Status</Table.Th>
               <Table.Th>Created</Table.Th>
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
@@ -108,7 +159,7 @@ export default function PoliciesPage() {
             {isLoading
               ? [...Array(5)].map((_, i) => (
                   <Table.Tr key={i}>
-                    {[...Array(6)].map((_, j) => (
+                    {[...Array(7)].map((_, j) => (
                       <Table.Td key={j}><Skeleton height={20} /></Table.Td>
                     ))}
                   </Table.Tr>
@@ -127,10 +178,10 @@ export default function PoliciesPage() {
                       </Badge>
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={STATUS_COLORS[p.status] ?? 'gray'} variant="light" size="sm"
-                        className={p.status === 'DEPLOYING' ? 'pulse-deploying' : ''}>
-                        {p.status}
-                      </Badge>
+                      {renderOpaStatus(p)}
+                    </Table.Td>
+                    <Table.Td>
+                      {renderDeploymentStatus(p)}
                     </Table.Td>
                     <Table.Td>
                       <Text size="xs" c="dimmed">

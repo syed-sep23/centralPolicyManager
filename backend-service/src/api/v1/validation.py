@@ -176,7 +176,6 @@ async def validate_policy(body: ValidationRequest, db: AsyncSession = Depends(ge
             "detail": json.dumps(detail_data),
         }
     )
-    await db.commit()
 
     return ValidationResponse(is_valid=is_valid, policy_id=body.policy_id, version_id=body.version_id, checks=checks, errors=errors)
 
@@ -259,7 +258,6 @@ async def simulate(policy_id: int, user_id: int, table_id: int, db: AsyncSession
             "detail": json.dumps({"user_id": user_id, "table_id": table_id, "roles": roles, "decision": decision}),
         }
     )
-    await db.commit()
 
     return {
         "user_id": user_id, "table_id": table_id, "user_roles": roles,

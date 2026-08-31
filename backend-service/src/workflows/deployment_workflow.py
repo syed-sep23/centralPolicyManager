@@ -22,16 +22,12 @@ activity_retry_policy = RetryPolicy(
 
 @activity.defn
 async def compile_policy_activity(params: dict) -> dict:
-    """Activity that compiles raw policy into Snowflake & Redshift DDL and exports to disk."""
+    """Activity that compiles raw policy into Snowflake & Redshift DDL in memory."""
     policy_id = params["policy_id"]
     version_id = params["version_id"]
     async with AsyncSessionLocal() as db:
         res = await export_and_compile_policy(policy_id, version_id, db)
         return {
-            "export_dir": res["export_dir"],
-            "raw_json_path": res["raw_json_path"],
-            "snowflake_sql_path": res["snowflake_sql_path"],
-            "redshift_sql_path": res["redshift_sql_path"],
             "snowflake_sql": res["snowflake_sql"],
             "redshift_sql": res["redshift_sql"],
             "raw_payload": res["raw_payload"],
@@ -47,16 +43,12 @@ async def deploy_to_platform_activity(params: dict) -> dict:
     version_id = params["version_id"]
     sql_ddl = params.get("sql_ddl", "")
     raw_policy = params.get("raw_policy", {})
-    export_dir = params.get("export_dir", "exported_policies")
-
-    sql_file = "snowflake_v" if platform_code == "SNOWFLAKE" else "redshift_v"
-    file_ref = f"{export_dir}/{sql_file}{version_id}.sql"
 
     if not connector_url:
         return {
             "platform_code": platform_code,
             "status": "NO_CONNECTOR",
-            "message": f"No connector configured. Native DDL saved to {file_ref}",
+            "message": f"No connector configured for {platform_code}",
         }
 
     try:
@@ -77,7 +69,7 @@ async def deploy_to_platform_activity(params: dict) -> dict:
                     "platform_code": platform_code,
                     "status": "SUCCESS",
                     "result": result,
-                    "message": f"Successfully applied native {platform_code} DDL",
+                    "message": result.get("message") or f"Successfully applied native {platform_code} DDL",
                 }
             else:
                 err_msg = result.get("error") or result.get("message") or f"Connector returned HTTP {resp.status_code}"
@@ -97,7 +89,7 @@ class PolicyDeploymentWorkflow:
         version_id = payload["version_id"]
         targets = payload.get("targets", [])
 
-        # 1. Compile policy JSON to native Snowflake & Redshift DDL SQL and export to files
+        # 1. Compile policy JSON to native Snowflake & Redshift DDL SQL
         compile_res = await workflow.execute_activity(
             compile_policy_activity,
             {"policy_id": policy_id, "version_id": version_id},
@@ -115,7 +107,6 @@ class PolicyDeploymentWorkflow:
 
             target_payload = {
                 **target,
-                "export_dir": compile_res["export_dir"],
                 "sql_ddl": sql_ddl,
                 "raw_policy": compile_res["raw_payload"],
             }
@@ -129,9 +120,7 @@ class PolicyDeploymentWorkflow:
                 )
                 results.append(res)
             except Exception as err:
-                # Retried 3 times and failed
-                file_ref = f"{compile_res['export_dir']}/{'snowflake' if platform_code == 'SNOWFLAKE' else 'redshift'}_v{version_id}.sql"
-                err_msg = f"Failed after 3 attempts: {err}. Native DDL saved to {file_ref}"
+                err_msg = f"Failed after 3 attempts: {err}"
                 failed_errors.append(err_msg)
                 results.append({
                     "platform_code": platform_code,
@@ -147,9 +136,6 @@ class PolicyDeploymentWorkflow:
         return {
             "policy_id": policy_id,
             "version_id": version_id,
-            "export_dir": compile_res["export_dir"],
-            "snowflake_sql_path": compile_res["snowflake_sql_path"],
-            "redshift_sql_path": compile_res["redshift_sql_path"],
             "results": results,
             "overall_status": "COMPLETED",
         }

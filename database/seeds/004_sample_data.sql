@@ -299,3 +299,17 @@ INSERT INTO policy_version_targets (version_id, platform_id, deployment_status, 
 (2, 1, 'SUCCESS', 'dep-init-sf-002', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
 (2, 2, 'SUCCESS', 'dep-init-rs-002', 'Successfully deployed native DDL to REDSHIFT', NOW())
 ON CONFLICT (version_id, platform_id) DO NOTHING;
+
+-- ─── Update Policies current_version_id ─────────────────────────────────────────
+UPDATE policies SET current_version_id = 1 WHERE policy_id = 1 AND current_version_id IS NULL;
+UPDATE policies SET current_version_id = 2 WHERE policy_id = 2 AND current_version_id IS NULL;
+
+-- ─── Advance Auto-Increment Sequences to Prevent Unique Constraint Collisions ──
+SELECT setval('policies_policy_id_seq', (SELECT MAX(policy_id) FROM policies));
+SELECT setval('policy_versions_version_id_seq', (SELECT MAX(version_id) FROM policy_versions));
+SELECT setval('policy_rules_rule_id_seq', (SELECT MAX(rule_id) FROM policy_rules));
+SELECT setval('policy_rule_subjects_subject_id_seq', (SELECT MAX(subject_id) FROM policy_rule_subjects));
+SELECT setval('policy_rule_actions_action_id_seq', (SELECT MAX(action_id) FROM policy_rule_actions));
+SELECT setval('policy_rule_resources_resource_id_seq', (SELECT MAX(resource_id) FROM policy_rule_resources));
+SELECT setval('platform_role_mappings_mapping_id_seq', (SELECT MAX(mapping_id) FROM platform_role_mappings));
+
