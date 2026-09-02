@@ -24,15 +24,16 @@ database/
 
 | Order | Script File | Description | Key Tables Created |
 |---|---|---|---|
-| **1** | [`001_core_domain.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/001_core_domain.sql) | Identity & Access Management core models | `users`, `roles`, `user_roles`, `projects`, `project_members` |
-| **2** | [`002_metadata.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/002_metadata.sql) | Data Catalog & Metadata models | `data_sources`, `data_tables`, `data_columns`, `tag_definitions`, `object_tags` |
-| **3** | [`003_policies.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/003_policies.sql) | Policy Enforcement & Audit Trail | `policies`, `policy_rules`, `policy_applications`, `audit_logs`, `policy_change_history` |
+| **1** | [`001_core_domain.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/001_core_domain.sql) | Identity & Access Management core models, ABAC user attributes, group attributes | `organizations`, `data_domains`, `data_products`, `roles`, `users`, `user_role_mappings`, `user_attributes`, `group_attributes`, `permissions`, `role_permissions` |
+| **2** | [`002_metadata.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/002_metadata.sql) | Data Catalog, Cloud Platforms, Hierarchical Taxonomy Tags & Assignments | `metadata_platforms`, `metadata_databases`, `metadata_schemas`, `metadata_tables`, `metadata_columns`, `metadata_tags`, `metadata_tag_assignments`, `data_product_table_mappings`, `platform_role_mappings` |
+| **3** | [`003_policies.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/003_policies.sql) | PBAC Purposes, Access Requests, Policy Engine AST & Audit Trail | `purposes`, `user_purposes`, `data_access_requests`, `abac_attribute_groups`, `policies`, `policy_versions`, `policy_rules`, `policy_rule_subjects`, `policy_rule_resources`, `policy_rule_actions`, `policy_rule_conditions`, `policy_version_targets`, `audit_events` |
 
 ### 2. Seed Scripts (`database/seeds/`)
 
 | Script File | Description | Populated Data |
 |---|---|---|
-| [`004_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/004_sample_data.sql) | Sample setup for local dev | Admin/Data Engineer users, Snowflake & Redshift data sources, Customer & Transaction tables with tags, Masking policies |
+| [`004_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/004_sample_data.sql) | Complete enterprise seed data for fresh deployments | 7 users, 13 roles, user & group ABAC attributes, 6 PBAC purposes, user authorizations, 5 access requests, 2 platforms (Snowflake/Redshift), 10 tables, 76 columns, 29 hierarchical taxonomy tags, 20 tag assignments, 3 active policies, targets, and auto-increment sequence advancement |
+
 
 ---
 

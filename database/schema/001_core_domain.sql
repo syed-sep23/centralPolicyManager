@@ -105,6 +105,19 @@ CREATE TABLE IF NOT EXISTS user_attributes (
     UNIQUE(user_id, attribute_key)
 );
 
+-- ─── Group / Role ABAC Attributes (Inherited by Group Members) ─────────────────
+CREATE TABLE IF NOT EXISTS group_attributes (
+    attribute_id        SERIAL PRIMARY KEY,
+    role_id             INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+    attribute_key       VARCHAR(100) NOT NULL,
+    attribute_value     VARCHAR(500) NOT NULL,
+    attribute_source    VARCHAR(50)  NOT NULL DEFAULT 'MANUAL'
+                        CHECK (attribute_source IN ('LDAP','MANUAL','SYSTEM')),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(role_id, attribute_key)
+);
+
 -- ─── Domain-Product Cross-Domain Relationships ────────────────────────────────
 CREATE TABLE IF NOT EXISTS domain_product_dependencies (
     dependency_id       SERIAL PRIMARY KEY,
@@ -140,5 +153,7 @@ CREATE INDEX IF NOT EXISTS idx_roles_org         ON roles(organization_id);
 CREATE INDEX IF NOT EXISTS idx_urm_user          ON user_role_mappings(user_id);
 CREATE INDEX IF NOT EXISTS idx_urm_role          ON user_role_mappings(role_id);
 CREATE INDEX IF NOT EXISTS idx_user_attrs_user   ON user_attributes(user_id);
+CREATE INDEX IF NOT EXISTS idx_group_attrs_role  ON group_attributes(role_id);
 CREATE INDEX IF NOT EXISTS idx_domains_org       ON data_domains(organization_id);
 CREATE INDEX IF NOT EXISTS idx_products_domain   ON data_products(domain_id);
+

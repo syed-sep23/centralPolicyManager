@@ -11,7 +11,7 @@ from temporalio.client import Client
 from src.core.config import settings
 from src.db.session import get_db
 from src.workflows.deployment_workflow import PolicyDeploymentWorkflow
-from src.services.policy_compiler import export_and_compile_policy, fetch_policy_raw_payload, compile_snowflake_sql, compile_redshift_sql
+from src.services.policy_compiler import export_and_compile_policy, fetch_policy_raw_payload, compile_snowflake_sql, compile_redshift_sql, compile_opa_rego
 
 router = APIRouter()
 
@@ -253,6 +253,7 @@ async def get_compiled_policy_artifacts(policy_id: int, version_id: Optional[int
     raw_payload = await fetch_policy_raw_payload(version_id, db)
     snowflake_sql = compile_snowflake_sql(raw_payload)
     redshift_sql = compile_redshift_sql(raw_payload)
+    opa_rego = compile_opa_rego(raw_payload)
 
     return {
         "policy_id": policy_id,
@@ -260,4 +261,5 @@ async def get_compiled_policy_artifacts(policy_id: int, version_id: Optional[int
         "raw_payload": raw_payload,
         "snowflake_sql": snowflake_sql,
         "redshift_sql": redshift_sql,
+        "opa_rego": opa_rego,
     }

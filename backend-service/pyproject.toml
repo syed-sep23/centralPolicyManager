@@ -20,6 +20,8 @@ dependencies = [
     "structlog>=24.2.0",
     "temporalio>=1.6.0",
     "python-multipart>=0.0.9",
+    "psycopg2-binary>=2.9.9",
+    "snowflake-connector-python>=3.10.0",
 ]
 
 [tool.hatch.build.targets.wheel]

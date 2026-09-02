@@ -93,3 +93,14 @@ async def delete_policy(
 ):
     svc = PolicyService(db)
     await svc.deprecate_policy(policy_id)
+
+
+from src.services.policy_compiler import compile_policy_preview
+
+@router.post("/preview-compile")
+async def preview_compile_policy(body: dict):
+    """
+    Compile a draft Immuta Global Policy into live Snowflake DDL, Redshift DDL,
+    OPA Rego code, and plain English natural language summary without saving to DB.
+    """
+    return compile_policy_preview(body)

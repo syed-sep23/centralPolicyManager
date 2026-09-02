@@ -14,8 +14,11 @@ const PolicyStudioPage = lazy(() => import('./pages/Policies/PolicyStudioPage'))
 const PolicyDetailPage = lazy(() => import('./pages/Policies/PolicyDetailPage'))
 const DataCatalogPage  = lazy(() => import('./pages/DataCatalog/DataCatalogPage'))
 const RoleManagerPage  = lazy(() => import('./pages/Roles/RoleManagerPage'))
-const AuditPage        = lazy(() => import('./pages/Audit/AuditPage'))
 const DeploymentsPage  = lazy(() => import('./pages/Deployments/DeploymentsPage'))
+const RequestsPage     = lazy(() => import('./pages/Requests/SubscriptionRequestsPage'))
+const PurposesPage     = lazy(() => import('./pages/Purposes/PurposesPage'))
+const PlatformsPage    = lazy(() => import('./pages/Platforms/PlatformsPage'))
+const TagsManagementPage = lazy(() => import('./pages/Tags/TagsManagementPage'))
 
 const PageLoader = () => (
   <Center h="100%" py="xl">
@@ -49,9 +52,12 @@ export default function App() {
             <Route path="/policies/new"       element={<PolicyStudioPage />} />
             <Route path="/policies/:id"       element={<PolicyDetailPage />} />
             <Route path="/policies/:id/edit"  element={<PolicyStudioPage />} />
+            <Route path="/requests"           element={<RequestsPage />} />
+            <Route path="/purposes"           element={<PurposesPage />} />
             <Route path="/catalog"            element={<DataCatalogPage />} />
+            <Route path="/tags"               element={<TagsManagementPage />} />
+            <Route path="/platforms"          element={<PlatformsPage />} />
             <Route path="/roles"              element={<RoleManagerPage />} />
-            <Route path="/audit"              element={<AuditPage />} />
             <Route path="/deployments"        element={<DeploymentsPage />} />
             <Route path="*"                   element={<Navigate to="/dashboard" replace />} />
           </Routes>

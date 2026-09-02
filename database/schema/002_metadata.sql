@@ -77,14 +77,20 @@ CREATE TABLE IF NOT EXISTS metadata_columns (
     UNIQUE(table_id, column_name)
 );
 
--- ─── Tags ─────────────────────────────────────────────────────────────────────
+-- ─── Tags (Hierarchical Taxonomy) ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS metadata_tags (
     tag_id              SERIAL PRIMARY KEY,
-    platform_id         INTEGER NOT NULL REFERENCES metadata_platforms(platform_id) ON DELETE CASCADE,
+    platform_id         INTEGER REFERENCES metadata_platforms(platform_id) ON DELETE CASCADE,
     tag_name            VARCHAR(255) NOT NULL,
+    full_path           VARCHAR(500) NOT NULL UNIQUE,
+    parent_tag_id       INTEGER REFERENCES metadata_tags(tag_id) ON DELETE CASCADE,
     tag_category        VARCHAR(100),
+    source_type         VARCHAR(50) NOT NULL DEFAULT 'MANUAL'
+                        CHECK (source_type IN ('MANUAL','DISCOVERED','EXTERNAL_CATALOG','SYSTEM')),
+    description         TEXT,
     allowed_values      TEXT,
-    UNIQUE(platform_id, tag_name)
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ─── Tag Assignments ──────────────────────────────────────────────────────────
@@ -94,13 +100,14 @@ CREATE TABLE IF NOT EXISTS metadata_tag_assignments (
     table_id            INTEGER REFERENCES metadata_tables(table_id) ON DELETE CASCADE,
     column_id           INTEGER REFERENCES metadata_columns(column_id) ON DELETE CASCADE,
     tag_value           VARCHAR(255),
+    confidence_score    DOUBLE PRECISION DEFAULT 1.0,
+    assigned_by         VARCHAR(100) DEFAULT 'SYSTEM',
+    assigned_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     assigned_at_source  TIMESTAMPTZ,
     last_synced_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (
-        (table_id IS NOT NULL AND column_id IS NULL) OR
-        (table_id IS NULL AND column_id IS NOT NULL)
-    )
+    CHECK (table_id IS NOT NULL OR column_id IS NOT NULL)
 );
+
 
 -- ─── Data Product ↔ Table Mappings ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS data_product_table_mappings (

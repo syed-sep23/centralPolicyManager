@@ -36,43 +36,57 @@ export default function DataCatalogPage() {
   const searchRes = useQuery({ queryKey: ['search', search], queryFn: () => metadataApi.search(search), enabled: search.length >= 2 })
   const products  = useQuery({ queryKey: ['products'], queryFn: () => metadataApi.products() })
 
+  const getList = (res: any) => {
+    if (!res) return []
+    if (Array.isArray(res)) return res
+    if (Array.isArray(res.data)) return res.data
+    return []
+  }
+
+  const platformList = getList(platforms.data)
+  const dbList       = getList(databases.data)
+  const schemaList   = getList(schemas.data)
+  const rawTableList = getList(tables.data)
+  const rawColumnList= getList(columns.data)
+  const productList  = getList(products.data)
+
   // Auto-select defaults for initial load
   useEffect(() => {
-    if (!selectedPlatform && platforms.data?.data?.length) {
-      setSelectedPlatform(platforms.data.data[0].platform_id)
+    if (!selectedPlatform && platformList.length) {
+      setSelectedPlatform(platformList[0].platform_id)
     }
-  }, [platforms.data])
+  }, [platformList])
 
   useEffect(() => {
-    if (selectedPlatform && databases.data?.data?.length && !selectedDb) {
-      setSelectedDb(databases.data.data[0].database_id)
+    if (selectedPlatform && dbList.length && !selectedDb) {
+      setSelectedDb(dbList[0].database_id)
     }
-  }, [selectedPlatform, databases.data])
+  }, [selectedPlatform, dbList])
 
   useEffect(() => {
-    if (selectedDb && schemas.data?.data?.length && !selectedSchema) {
-      setSelectedSchema(schemas.data.data[0].schema_id)
+    if (selectedDb && schemaList.length && !selectedSchema) {
+      setSelectedSchema(schemaList[0].schema_id)
     }
-  }, [selectedDb, schemas.data])
+  }, [selectedDb, schemaList])
 
   useEffect(() => {
-    if (selectedSchema && tables.data?.data?.length && !selectedTable) {
-      setSelectedTable(tables.data.data[0].table_id)
+    if (selectedSchema && rawTableList.length && !selectedTable) {
+      setSelectedTable(rawTableList[0].table_id)
     }
-  }, [selectedSchema, tables.data])
+  }, [selectedSchema, rawTableList])
 
   // Resolve object labels
-  const currentPlatformObj = (platforms.data?.data ?? []).find((p: any) => p.platform_id === selectedPlatform)
-  const currentDbObj       = (databases.data?.data ?? []).find((d: any) => d.database_id === selectedDb)
-  const currentSchemaObj   = (schemas.data?.data ?? []).find((s: any) => s.schema_id === selectedSchema)
-  const currentTableObj    = (tables.data?.data ?? []).find((t: any) => t.table_id === selectedTable)
+  const currentPlatformObj = platformList.find((p: any) => p.platform_id === selectedPlatform)
+  const currentDbObj       = dbList.find((d: any) => d.database_id === selectedDb)
+  const currentSchemaObj   = schemaList.find((s: any) => s.schema_id === selectedSchema)
+  const currentTableObj    = rawTableList.find((t: any) => t.table_id === selectedTable)
 
   // Filtered lists
-  const tableList = (tables.data?.data ?? []).filter((t: any) =>
+  const tableList = rawTableList.filter((t: any) =>
     !tableFilter || t.table_name.toLowerCase().includes(tableFilter.toLowerCase())
   )
 
-  const columnList = (columns.data?.data ?? []).filter((c: any) =>
+  const columnList = rawColumnList.filter((c: any) =>
     !columnFilter ||
     c.column_name.toLowerCase().includes(columnFilter.toLowerCase()) ||
     (c.normalized_type && c.normalized_type.toLowerCase().includes(columnFilter.toLowerCase()))
@@ -143,7 +157,7 @@ export default function DataCatalogPage() {
       <Tabs value={activeTab} onChange={setActiveTab} color="violet">
         <Tabs.List>
           <Tabs.Tab value="platforms" leftSection={<IconDatabase size={16} />}>Platform Explorer</Tabs.Tab>
-          <Tabs.Tab value="products"  leftSection={<IconTag size={16} />}>Data Products ({products.data?.data?.length ?? 0})</Tabs.Tab>
+          <Tabs.Tab value="products"  leftSection={<IconTag size={16} />}>Data Products ({productList.length})</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="platforms" pt="md">
@@ -154,7 +168,7 @@ export default function DataCatalogPage() {
                 <Box>
                   <Text size="xs" fw={600} c="dimmed" mb={4}>TARGET PLATFORM</Text>
                   <Select
-                    data={(platforms.data?.data ?? []).map((p: any) => ({
+                    data={platformList.map((p: any) => ({
                       value: String(p.platform_id),
                       label: `${p.platform_name} (${p.platform_code})`,
                     }))}
@@ -179,7 +193,7 @@ export default function DataCatalogPage() {
                   <Text size="xs" fw={600} c="dimmed" mb="xs">DATABASES & SCHEMAS</Text>
                   {databases.isLoading ? (
                     <Stack gap="xs">{[...Array(3)].map((_, i) => <Skeleton key={i} height={30} />)}</Stack>
-                  ) : (databases.data?.data ?? []).length === 0 ? (
+                  ) : dbList.length === 0 ? (
                     <Text size="xs" c="dimmed">No databases found for platform.</Text>
                   ) : (
                     <ScrollArea.Autosize mah={500} offsetScrollbars>
@@ -196,7 +210,7 @@ export default function DataCatalogPage() {
                           }
                         }}
                       >
-                        {(databases.data?.data ?? []).map((dbObj: any) => (
+                        {dbList.map((dbObj: any) => (
                           <Accordion.Item key={dbObj.database_id} value={String(dbObj.database_id)} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                             <Accordion.Control p="xs">
                               <Group gap="xs">
@@ -207,7 +221,7 @@ export default function DataCatalogPage() {
                             <Accordion.Panel p="xs">
                               {schemas.isLoading ? <Skeleton height={20} /> : (
                                 <Stack gap={2}>
-                                  {(schemas.data?.data ?? []).map((sObj: any) => (
+                                  {schemaList.map((sObj: any) => (
                                     <Box
                                       key={sObj.schema_id}
                                       p={6}
@@ -444,7 +458,7 @@ export default function DataCatalogPage() {
         {/* Data Products Tab */}
         <Tabs.Panel value="products" pt="md">
           <Stack gap="sm">
-            {(products.data?.data ?? []).map((p: any) => (
+            {productList.map((p: any) => (
               <Card key={p.product_id} className="glass-card" p="md" radius="md">
                 <Group justify="space-between">
                   <Box>

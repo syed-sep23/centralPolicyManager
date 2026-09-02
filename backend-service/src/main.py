@@ -11,6 +11,7 @@ from src.db.session import engine, Base
 from src.api.v1 import (
     auth, policies, versions, rules, conditions,
     validation, metadata, user_rbac, deployments,
+    purposes, requests, scim,
 )
 from src.core.auth import configure_auth
 
@@ -84,6 +85,9 @@ def create_app() -> FastAPI:
 
     # API Routers
     app.include_router(auth.router,        prefix="/api/v1/auth",        tags=["Auth"])
+    app.include_router(purposes.router,    prefix="/api/v1/purposes",    tags=["Purposes (PBAC)"])
+    app.include_router(requests.router,    prefix="/api/v1/requests",    tags=["Entitlement Requests"])
+    app.include_router(scim.router,        prefix="/api/v1/scim/v2",     tags=["SCIM 2.0 Identity Sync"])
     app.include_router(policies.router,    prefix="/api/v1/policies",    tags=["Policies"])
     app.include_router(versions.router,    prefix="/api/v1/policies",    tags=["Versions"])
     app.include_router(rules.router,       prefix="/api/v1/policies",    tags=["Rules"])

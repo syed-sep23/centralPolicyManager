@@ -424,6 +424,9 @@ export default function PolicyDetailPage() {
                     <Tabs.Tab value="redshift" leftSection={<Code color="red" size="xs">RS</Code>}>
                       Redshift SQL
                     </Tabs.Tab>
+                    <Tabs.Tab value="opa" leftSection={<Code color="cyan" size="xs">OPA</Code>}>
+                      OPA Rego Policy
+                    </Tabs.Tab>
                     <Tabs.Tab value="raw_json" leftSection={<Code color="yellow" size="xs">JSON</Code>}>
                       Raw Policy JSON
                     </Tabs.Tab>
@@ -469,6 +472,28 @@ export default function PolicyDetailPage() {
                         }}
                       >
                         {compiledData.data.redshift_sql}
+                      </Code>
+                    </Box>
+                  </Tabs.Panel>
+
+                  <Tabs.Panel value="opa">
+                    <Box style={{ position: 'relative' }}>
+                      <Code
+                        block
+                        style={{
+                          maxHeight: 380,
+                          overflow: 'auto',
+                          backgroundColor: '#0d1117',
+                          color: '#67e8f9',
+                          fontSize: '12px',
+                          lineHeight: 1.6,
+                          padding: '14px 16px',
+                          borderRadius: '6px',
+                          border: '1px solid #30363d',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
+                        {compiledData.data.opa_rego || '# No OPA Rego generated for this version'}
                       </Code>
                     </Box>
                   </Tabs.Panel>

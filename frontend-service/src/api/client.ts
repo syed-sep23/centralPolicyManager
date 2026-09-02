@@ -39,6 +39,7 @@ export const policiesApi = {
     api.get('/policies', { params }),
   get: (id: number)  => api.get(`/policies/${id}`),
   create: (data: unknown) => api.post('/policies', data),
+  previewCompile: (data: unknown) => api.post('/policies/preview-compile', data),
   update: (id: number, data: unknown) => api.put(`/policies/${id}`, data),
   submit: (id: number) => api.post(`/policies/${id}/submit`),
   rollback: (id: number, toVersion: number) =>
@@ -53,7 +54,13 @@ export const policiesApi = {
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 export const metadataApi = {
+  drivers:          () => api.get('/metadata/platforms/drivers'),
   platforms:        () => api.get('/metadata/platforms'),
+  platform:         (id: number) => api.get(`/metadata/platforms/${id}`),
+  createPlatform:   (data: any) => api.post('/metadata/platforms', data),
+  updatePlatform:   (id: number, data: any) => api.put(`/metadata/platforms/${id}`, data),
+  testConnection:   (data: any) => api.post('/metadata/platforms/test-connection', data),
+  deletePlatform:   (id: number) => api.delete(`/metadata/platforms/${id}`),
   databases:        (platformId: number) => api.get(`/metadata/platforms/${platformId}/databases`),
   schemas:          (dbId: number) => api.get(`/metadata/databases/${dbId}/schemas`),
   tables:           (schemaId: number) => api.get(`/metadata/schemas/${schemaId}/tables`),
@@ -62,20 +69,38 @@ export const metadataApi = {
   domains:          () => api.get('/metadata/domains'),
   products:         (domainId?: number) => api.get('/metadata/products', { params: { domain_id: domainId } }),
   tags:             (platformId?: number) => api.get('/metadata/tags', { params: { platform_id: platformId } }),
+  tagsTree:         () => api.get('/metadata/tags/tree'),
+  createTag:        (data: unknown) => api.post('/metadata/tags', data),
+  deleteTag:        (id: number) => api.delete(`/metadata/tags/${id}`),
+  discoverTags:     () => api.post('/metadata/tags/discover'),
+  syncPlatformTags: () => api.post('/metadata/tags/sync-platform'),
+  assignTag:        (data: unknown) => api.post('/metadata/tags/assign', data),
+  unassignTag:      (id: number) => api.delete(`/metadata/tags/assignments/${id}`),
+  tagAssets:        (id: number) => api.get(`/metadata/tags/${id}/assets`),
   attributes:       () => api.get('/metadata/attributes'),
+  dspmMetrics:      () => api.get('/metadata/dspm/posture-metrics'),
 }
 
-// ─── Users & Roles ────────────────────────────────────────────────────────────
+// ─── Users, Groups & Immuta ABAC Identity ─────────────────────────────────────
 export const rbacApi = {
-  users:       (page = 1, size = 20) => api.get('/users', { params: { page, size } }),
+  users:       (page = 1, size = 50) => api.get('/users', { params: { page, size } }),
   user:        (id: number) => api.get(`/users/${id}`),
+  createUser:  (data: unknown) => api.post('/users', data),
   userRoles:   (id: number) => api.get(`/users/${id}/roles`),
   userAttrs:   (id: number) => api.get(`/users/${id}/attributes`),
+  effectiveAttrs: (id: number) => api.get(`/users/${id}/effective-attributes`),
   upsertAttr:  (id: number, data: unknown) => api.put(`/users/${id}/attributes`, data),
+  deleteAttr:  (id: number, key: string) => api.delete(`/users/${id}/attributes/${key}`),
   roles:       () => api.get('/roles'),
+  createRole:  (data: unknown) => api.post('/roles', data),
+  roleAttrs:   (id: number) => api.get(`/roles/${id}/attributes`),
+  upsertRoleAttr: (id: number, data: unknown) => api.put(`/roles/${id}/attributes`, data),
+  deleteRoleAttr: (id: number, key: string) => api.delete(`/roles/${id}/attributes/${key}`),
+  roleMembers: (id: number) => api.get(`/roles/${id}/members`),
   assignRole:  (data: { user_id: number; role_id: number }) => api.post('/roles/assign', data),
   revokeRole:  (userId: number, roleId: number) =>
     api.delete('/roles/assign', { params: { user_id: userId, role_id: roleId } }),
+  syncIdp:     () => api.post('/users/sync-idp'),
 }
 
 // ─── Deployments ──────────────────────────────────────────────────────────────
@@ -94,4 +119,22 @@ export const validationApi = {
   simulate: (policyId: number, userId: number, tableId: number) =>
     api.post('/simulate', null, { params: { policy_id: policyId, user_id: userId, table_id: tableId } }),
   getAuditLogs: (policyId: number) => api.get(`/logs/${policyId}`),
+}
+
+// ─── Purposes (PBAC) ──────────────────────────────────────────────────────────
+export const purposesApi = {
+  list: () => api.get('/purposes').then((r) => r.data),
+  create: (data: unknown) => api.post('/purposes', data).then((r) => r.data),
+  users: (purposeId: number) => api.get(`/purposes/${purposeId}/users`).then((r) => r.data),
+  authorizeUser: (purposeId: number, userId: number) => api.post(`/purposes/${purposeId}/users`, { user_id: userId }),
+  revokeUser: (purposeId: number, userId: number) => api.delete(`/purposes/${purposeId}/users/${userId}`),
+}
+
+// ─── Data Entitlement Requests ────────────────────────────────────────────────
+export const requestsApi = {
+  list: (status?: string) => api.get('/requests', { params: { status } }),
+  create: (data: unknown) => api.post('/requests', data),
+  approve: (id: number) => api.post(`/requests/${id}/approve`),
+  reject: (id: number) => api.post(`/requests/${id}/reject`),
+  delete: (id: number) => api.delete(`/requests/${id}`),
 }

@@ -4,6 +4,53 @@
 -- Policies, Versions, Rules, Subjects, Resources, Actions, Conditions
 -- ============================================================
 
+-- ─── PBAC Business Purposes (Purpose-Based Access Control) ───────────────────
+CREATE TABLE IF NOT EXISTS purposes (
+    purpose_id             SERIAL PRIMARY KEY,
+    purpose_code           VARCHAR(100) NOT NULL UNIQUE,
+    purpose_name           VARCHAR(255) NOT NULL,
+    description            TEXT,
+    compliance_mandate     VARCHAR(100),
+    retention_period_days  INTEGER DEFAULT 365,
+    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─── User Purpose Authorizations ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_purposes (
+    user_purpose_id        SERIAL PRIMARY KEY,
+    user_id                INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    purpose_id             INTEGER NOT NULL REFERENCES purposes(purpose_id) ON DELETE CASCADE,
+    authorized_by          VARCHAR(255) NOT NULL DEFAULT 'SYSTEM',
+    valid_from             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    valid_until            TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
+    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, purpose_id)
+);
+
+-- ─── Entitlement & Subscription Access Requests ──────────────────────────────
+CREATE TABLE IF NOT EXISTS data_access_requests (
+    request_id             SERIAL PRIMARY KEY,
+    request_number         VARCHAR(50) NOT NULL UNIQUE,
+    requestor_id           INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    domain_id              INTEGER REFERENCES data_domains(domain_id) ON DELETE SET NULL,
+    product_id             INTEGER REFERENCES data_products(product_id) ON DELETE SET NULL,
+    purpose_id             INTEGER REFERENCES purposes(purpose_id) ON DELETE SET NULL,
+    requested_role_id      INTEGER REFERENCES roles(role_id) ON DELETE SET NULL,
+    access_level           VARCHAR(50) NOT NULL DEFAULT 'READ',
+    justification          TEXT NOT NULL,
+    valid_for_days         INTEGER NOT NULL DEFAULT 30,
+    status                 VARCHAR(30) NOT NULL DEFAULT 'PENDING'
+                           CHECK (status IN ('PENDING','APPROVED','REJECTED','REVOKED','EXPIRED')),
+    reviewed_by_id         INTEGER REFERENCES users(user_id),
+    reviewed_at            TIMESTAMPTZ,
+    review_comment         TEXT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ─── ABAC Attribute Groups (referenced before policy tables) ──────────────────
 CREATE TABLE IF NOT EXISTS abac_attribute_groups (
     group_id            SERIAL PRIMARY KEY,
@@ -22,6 +69,7 @@ CREATE TABLE IF NOT EXISTS abac_attribute_group_members (
     compare_value       VARCHAR(500) NOT NULL,
     UNIQUE(group_id, attribute_key)
 );
+
 
 -- ─── Policies ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS policies (
@@ -210,3 +258,8 @@ CREATE INDEX IF NOT EXISTS idx_pvt_version              ON policy_version_target
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp          ON audit_events(event_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_policy             ON audit_events(policy_id);
 CREATE INDEX IF NOT EXISTS idx_audit_actor              ON audit_events(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_purposes_user       ON user_purposes(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_purposes_purp       ON user_purposes(purpose_id);
+CREATE INDEX IF NOT EXISTS idx_dar_requestor            ON data_access_requests(requestor_id);
+CREATE INDEX IF NOT EXISTS idx_dar_status               ON data_access_requests(status);
+
