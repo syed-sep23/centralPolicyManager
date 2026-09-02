@@ -2,7 +2,7 @@ import { NavLink, Stack, Text, Group, Avatar, Box, Divider } from '@mantine/core
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   IconShieldCheck, IconDatabase, IconUsers, IconClipboardList,
-  IconRocket, IconLayoutDashboard, IconLogout, IconBracketsContain,
+  IconRocket, IconLayoutDashboard, IconShield,
 } from '@tabler/icons-react'
 import { useAuthStore } from '../../store/authStore'
 
@@ -18,72 +18,74 @@ const NAV_ITEMS = [
 export default function AppSidebar() {
   const navigate  = useNavigate()
   const location  = useLocation()
-  const { user, logout } = useAuthStore()
+  const { user }  = useAuthStore()
 
   return (
-    <Stack h="100%" justify="space-between" p="sm" gap={0}>
-      {/* Logo */}
+    <Stack h="100%" justify="space-between" p="xs" gap={0} style={{ borderRight: '1px solid var(--mantine-color-default-border)' }}>
+      {/* Brand Header */}
       <Box>
-        <Group gap="xs" px="xs" py="md" mb="xs">
+        <Group gap="xs" px="xs" py="sm" mb="xs">
           <Box
             style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 26,
+              height: 26,
+              borderRadius: 4,
+              background: 'var(--mantine-color-indigo-filled)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            <IconBracketsContain size={18} color="white" />
+            <IconShield size={16} color="white" />
           </Box>
           <Box>
-            <Text fw={700} size="sm" lh={1}>CES Hub</Text>
-            <Text size="xs" c="dimmed" lh={1}>Entitlement Service</Text>
+            <Text fw={600} size="sm" lh={1.2}>CES Hub</Text>
+            <Text size="10px" c="dimmed" lh={1.2}>Platform v1.0</Text>
           </Box>
         </Group>
 
-        <Divider mb="sm" />
+        <Divider mb="xs" />
 
-        {/* Nav links */}
-        <Stack gap={2}>
+        {/* Minimal Navigation links */}
+        <Stack gap={3}>
           {NAV_ITEMS.map((item) => {
             const active = location.pathname.startsWith(item.href)
             return (
               <NavLink
                 key={item.href}
                 label={item.label}
-                leftSection={<item.icon size={18} />}
+                leftSection={<item.icon size={16} stroke={1.5} />}
                 active={active}
                 onClick={() => navigate(item.href)}
                 style={{
-                  borderRadius: 8,
-                  fontWeight: active ? 600 : 400,
+                  borderRadius: 4,
+                  fontSize: '0.8125rem',
+                  fontWeight: active ? 500 : 400,
+                  padding: '7px 10px',
                 }}
-                color="violet"
+                color="indigo"
+                variant="light"
               />
             )
           })}
         </Stack>
       </Box>
 
-      {/* User footer */}
+      {/* User profile footer */}
       <Box>
-        <Divider mb="sm" />
-        <Group justify="space-between" px="xs" pb="xs">
-          <Group gap="sm">
-            <Avatar color="violet" radius="xl" size="sm">
-              {user?.username?.[0]?.toUpperCase() ?? 'U'}
+        <Divider mb="xs" />
+        <Group justify="space-between" px="xs" py="xs">
+          <Group gap="xs">
+            <Avatar color="indigo" radius="sm" size="sm">
+              {user?.username?.[0]?.toUpperCase() ?? 'A'}
             </Avatar>
             <Box>
-              <Text size="xs" fw={600} lh={1}>{user?.username ?? 'Guest'}</Text>
-              <Text size="xs" c="dimmed" lh={1.5}>
-                {user?.roles?.[0] ?? 'Viewer'}
+              <Text size="xs" fw={500} lh={1.2}>{user?.username ?? 'admin'}</Text>
+              <Text size="10px" c="dimmed" lh={1.2}>
+                {user?.roles?.[0] ?? 'Administrator'}
               </Text>
             </Box>
           </Group>
-          <IconLogout
-            size={16}
-            style={{ cursor: 'pointer', opacity: 0.6 }}
-            onClick={logout}
-          />
         </Group>
       </Box>
     </Stack>

@@ -13,28 +13,114 @@ import '@mantine/notifications/styles.css'
 import '@mantine/charts/styles.css'
 import './styles/global.css'
 
+// ─── Mantine Minimalist Theme ────────────────────────────────────────────────
 const theme = createTheme({
-  fontFamily: 'Inter, sans-serif',
-  fontFamilyMonospace: 'JetBrains Mono, monospace',
-  primaryColor: 'violet',
-  defaultRadius: 'md',
-  colors: {
-    // Custom violet palette for premium feel
-    violet: [
-      '#f3f0ff', '#e5dbff', '#d0bfff', '#b197fc',
-      '#9775fa', '#845ef7', '#7950f2', '#7048e8',
-      '#6741d9', '#5f3dc4',
-    ],
+  fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  fontFamilyMonospace: 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  primaryColor: 'indigo',
+  defaultRadius: 'sm',
+  cursorType: 'pointer',
+  headings: {
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+    fontWeight: '600',
   },
   components: {
     Button: {
-      defaultProps: { radius: 'md' },
+      defaultProps: {
+        radius: 'sm',
+        size: 'sm',
+        fw: 500,
+      },
     },
     Card: {
-      defaultProps: { radius: 'lg', shadow: 'sm' },
+      defaultProps: {
+        withBorder: true,
+        shadow: 'none',
+        radius: 'sm',
+        padding: 'md',
+      },
+    },
+    Paper: {
+      defaultProps: {
+        withBorder: true,
+        shadow: 'none',
+        radius: 'sm',
+      },
+    },
+    Table: {
+      defaultProps: {
+        highlightOnHover: true,
+        withTableBorder: true,
+        withColumnBorders: false,
+        verticalSpacing: 'sm',
+      },
     },
     Badge: {
-      defaultProps: { radius: 'sm' },
+      defaultProps: {
+        radius: 'xs',
+        variant: 'light',
+        size: 'sm',
+        fw: 500,
+      },
+    },
+    TextInput: {
+      defaultProps: {
+        radius: 'sm',
+        size: 'sm',
+      },
+    },
+    Select: {
+      defaultProps: {
+        radius: 'sm',
+        size: 'sm',
+        comboboxProps: { shadow: 'md', transitionProps: { transition: 'pop', duration: 150 } },
+      },
+    },
+    MultiSelect: {
+      defaultProps: {
+        radius: 'sm',
+        size: 'sm',
+        comboboxProps: { shadow: 'md', transitionProps: { transition: 'pop', duration: 150 } },
+      },
+    },
+    Textarea: {
+      defaultProps: {
+        radius: 'sm',
+        size: 'sm',
+      },
+    },
+    Modal: {
+      defaultProps: {
+        radius: 'sm',
+        shadow: 'md',
+        overlayProps: {
+          backgroundOpacity: 0.4,
+          blur: 3,
+        },
+      },
+    },
+    ActionIcon: {
+      defaultProps: {
+        radius: 'sm',
+        variant: 'subtle',
+      },
+    },
+    ThemeIcon: {
+      defaultProps: {
+        radius: 'sm',
+        variant: 'light',
+      },
+    },
+    SegmentedControl: {
+      defaultProps: {
+        radius: 'sm',
+        size: 'xs',
+      },
+    },
+    Divider: {
+      defaultProps: {
+        opacity: 0.6,
+      },
     },
   },
 })

@@ -11,10 +11,22 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: null,
-      user: null,
+      token: 'no-auth-token',
+      user: {
+        user_id: 1,
+        username: 'admin',
+        roles: ['ADMIN', 'SUPER_ADMIN', 'POLICY_AUTHOR', 'DATA_GOVERNOR', 'DATA_ENGINEER', 'ANALYST'],
+      },
       setAuth: (token, user) => set({ token, user }),
-      logout: () => set({ token: null, user: null }),
+      logout: () =>
+        set({
+          token: 'no-auth-token',
+          user: {
+            user_id: 1,
+            username: 'admin',
+            roles: ['ADMIN', 'SUPER_ADMIN'],
+          },
+        }),
     }),
     { name: 'ces-auth' }
   )

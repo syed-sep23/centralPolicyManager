@@ -1,33 +1,36 @@
 import { Group, Burger, Text, ActionIcon, Tooltip, Badge } from '@mantine/core'
-import { IconBell, IconMoon, IconSun } from '@tabler/icons-react'
+import { IconMoon, IconSun } from '@tabler/icons-react'
 import { useMantineColorScheme } from '@mantine/core'
 
-interface AppHeaderProps { opened: boolean; toggle: () => void }
+interface AppHeaderProps {
+  opened: boolean
+  toggle: () => void
+}
 
 export default function AppHeader({ opened, toggle }: AppHeaderProps) {
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
 
   return (
-    <Group h="100%" px="md" justify="space-between">
-      <Group>
+    <Group h="100%" px="md" justify="space-between" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
+      <Group gap="sm">
         <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-        <Text visibleFrom="sm" size="sm" c="dimmed">
-          Central Entitlement Service (CES)
-        </Text>
+        <Group gap="xs">
+          <Text size="sm" fw={600} visibleFrom="xs">
+            Central Entitlement Service
+          </Text>
+          <Text size="xs" c="dimmed" visibleFrom="md">
+            / Policy Governance
+          </Text>
+        </Group>
       </Group>
 
-      <Group gap="xs">
-        <Badge color="green" variant="dot" size="sm">
-          System Healthy
+      <Group gap="sm">
+        <Badge color="teal" variant="dot" size="sm">
+          Healthy
         </Badge>
-        <Tooltip label="Toggle theme">
-          <ActionIcon variant="subtle" onClick={toggleColorScheme}>
-            {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Notifications">
-          <ActionIcon variant="subtle">
-            <IconBell size={18} />
+        <Tooltip label={`Switch to ${colorScheme === 'dark' ? 'light' : 'dark'} mode`}>
+          <ActionIcon variant="subtle" size="sm" onClick={toggleColorScheme} aria-label="Toggle theme">
+            {colorScheme === 'dark' ? <IconSun size={16} /> : <IconMoon size={16} />}
           </ActionIcon>
         </Tooltip>
       </Group>

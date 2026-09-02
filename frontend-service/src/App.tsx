@@ -3,13 +3,11 @@ import { AppShell } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import AppSidebar from './components/layout/AppSidebar'
 import AppHeader from './components/layout/AppHeader'
-import { useAuthStore } from './store/authStore'
 
 // Pages (lazy-loaded for performance)
 import { lazy, Suspense } from 'react'
 import { Center, Loader } from '@mantine/core'
 
-const LoginPage        = lazy(() => import('./pages/Login/LoginPage'))
 const DashboardPage    = lazy(() => import('./pages/Dashboard/DashboardPage'))
 const PoliciesPage     = lazy(() => import('./pages/Policies/PoliciesPage'))
 const PolicyStudioPage = lazy(() => import('./pages/Policies/PolicyStudioPage'))
@@ -20,19 +18,28 @@ const AuditPage        = lazy(() => import('./pages/Audit/AuditPage'))
 const DeploymentsPage  = lazy(() => import('./pages/Deployments/DeploymentsPage'))
 
 const PageLoader = () => (
-  <Center h="100%"><Loader size="lg" color="violet" /></Center>
+  <Center h="100%" py="xl">
+    <Loader size="md" type="dots" color="indigo" />
+  </Center>
 )
 
-function ProtectedLayout() {
+export default function App() {
   const [opened, { toggle }] = useDisclosure()
+
   return (
     <AppShell
-      header={{ height: 60 }}
-      navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+      header={{ height: 52 }}
+      navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding="md"
     >
-      <AppShell.Header><AppHeader opened={opened} toggle={toggle} /></AppShell.Header>
-      <AppShell.Navbar><AppSidebar /></AppShell.Navbar>
+      <AppShell.Header>
+        <AppHeader opened={opened} toggle={toggle} />
+      </AppShell.Header>
+
+      <AppShell.Navbar>
+        <AppSidebar />
+      </AppShell.Navbar>
+
       <AppShell.Main>
         <Suspense fallback={<PageLoader />}>
           <Routes>
@@ -46,25 +53,10 @@ function ProtectedLayout() {
             <Route path="/roles"              element={<RoleManagerPage />} />
             <Route path="/audit"              element={<AuditPage />} />
             <Route path="/deployments"        element={<DeploymentsPage />} />
+            <Route path="*"                   element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>
       </AppShell.Main>
     </AppShell>
-  )
-}
-
-export default function App() {
-  const { token } = useAuthStore()
-
-  return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/*"
-          element={token ? <ProtectedLayout /> : <Navigate to="/login" replace />}
-        />
-      </Routes>
-    </Suspense>
   )
 }

@@ -1,23 +1,18 @@
 # ==============================================================================
-# Central Entitlement Service (CES) - Docker Compose (Production Architecture)
+# Central Entitlement Service (CES) - Docker Compose (Standalone / Self-Contained)
 # ==============================================================================
 #
-# This configuration replaces 'temporalio/auto-setup' with a production-ready
-# Temporal deployment using explicit schema management and namespace registration.
+# STANDALONE VERSION: All Temporal setup scripts are embedded inline.
+# No external .sh files required — everything runs from this single YAML file.
 #
 # Boot Sequence:
 #   1. PostgreSQL            -> healthcheck passes
-#   2. temporal-db-init      -> creates temporal databases and user
-#   3. temporal-schema-setup -> applies schema migrations via admin-tools
+#   2. temporal-db-init      -> creates temporal databases and user (inline)
+#   3. temporal-schema-setup -> applies schema migrations (inline)
 #   4. temporal              -> starts temporalio/server:1.24
-#   5. temporal-ns-register  -> registers the default namespace via tctl
+#   5. temporal-ns-register  -> registers default namespace (inline)
 #   6. temporal-ui           -> Temporal Web UI
 #   7. backend-service       -> CES application services
-#
-# External Scripts (in ./infrastructure/temporal/):
-#   - init-temporal-db.sh    -> Database & user creation (idempotent)
-#   - setup-schema.sh        -> Schema migrations via temporal-sql-tool
-#   - register-namespace.sh  -> Namespace registration via tctl
 # ==============================================================================
 
 x-common-env: &common-env
@@ -81,28 +76,45 @@ services:
   # Temporal Workflow Infrastructure (Production)
   # =============================================
   #
-  # Replaces temporalio/auto-setup with explicit:
-  #   - Database creation  (temporal, temporal_visibility)
-  #   - Schema migrations  (temporal-sql-tool via admin-tools)
-  #   - Server startup     (temporalio/server)
-  #   - Namespace register (tctl via admin-tools)
+  # All init scripts are embedded inline below.
+  # No external script files needed.
   # =============================================
 
-  # --- Step 1: Create Temporal databases and user ---
+  # --- Step 1: Create Temporal databases and user (inline) ---
   temporal-db-init:
     image: postgres:16-alpine
     container_name: ces-temporal-db-init
     environment:
       PGPASSWORD: ${PG_PASSWORD:-ces_secret_2024}
-      POSTGRES_HOST: postgresql
-      POSTGRES_PORT: "5432"
-      POSTGRES_SUPERUSER: ces_user
-      POSTGRES_DB: ces_db
-      TEMPORAL_PG_USER: ${TEMPORAL_PG_USER:-temporal_user}
-      TEMPORAL_PG_PASSWORD: ${TEMPORAL_PG_PASSWORD:-temporal_secret_2024}
-    volumes:
-      - ./infrastructure/temporal/init-temporal-db.sh:/init-temporal-db.sh:ro
-    entrypoint: ["sh", "/init-temporal-db.sh"]
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "=============================================="
+        echo "  Temporal Database Initialization"
+        echo "=============================================="
+        echo "[1/5] Creating temporal_user role..."
+        psql -h postgresql -p 5432 -U ces_user -d ces_db \
+          -c "CREATE ROLE temporal_user WITH LOGIN PASSWORD 'temporal_secret_2024';" \
+          2>/dev/null && echo "  -> Created" || echo "  -> Already exists (skipped)"
+        echo "[2/5] Creating database: temporal"
+        psql -h postgresql -p 5432 -U ces_user -d ces_db \
+          -c "CREATE DATABASE temporal OWNER temporal_user;" \
+          2>/dev/null && echo "  -> Created" || echo "  -> Already exists (skipped)"
+        echo "[3/5] Creating database: temporal_visibility"
+        psql -h postgresql -p 5432 -U ces_user -d ces_db \
+          -c "CREATE DATABASE temporal_visibility OWNER temporal_user;" \
+          2>/dev/null && echo "  -> Created" || echo "  -> Already exists (skipped)"
+        echo "[4/5] Granting privileges on temporal"
+        psql -h postgresql -p 5432 -U ces_user -d temporal \
+          -c "GRANT ALL ON SCHEMA public TO temporal_user;"
+        echo "[5/5] Granting privileges on temporal_visibility"
+        psql -h postgresql -p 5432 -U ces_user -d temporal_visibility \
+          -c "GRANT ALL ON SCHEMA public TO temporal_user;"
+        echo "=============================================="
+        echo "  Temporal databases ready"
+        echo "=============================================="
     networks:
       - ces-net
     depends_on:
@@ -110,18 +122,43 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # --- Step 2: Apply Temporal schema migrations ---
+  # --- Step 2: Apply Temporal schema migrations (inline) ---
   temporal-schema-setup:
     image: temporalio/admin-tools:1.30.1
     container_name: ces-temporal-schema-setup
-    environment:
-      POSTGRES_HOST: postgresql
-      POSTGRES_PORT: "5432"
-      TEMPORAL_PG_USER: ${TEMPORAL_PG_USER:-temporal_user}
-      TEMPORAL_PG_PASSWORD: ${TEMPORAL_PG_PASSWORD:-temporal_secret_2024}
-    volumes:
-      - ./infrastructure/temporal/setup-schema.sh:/setup-schema.sh:ro
-    entrypoint: ["sh", "/setup-schema.sh"]
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "=============================================="
+        echo "  Temporal Schema Migration"
+        echo "=============================================="
+        echo "[1/4] Initializing 'temporal' base schema..."
+        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
+          -u temporal_user --pw temporal_secret_2024 \
+          --db temporal setup-schema -v 0.0 \
+          2>/dev/null && echo "  -> Done" || echo "  -> Already initialized (skipped)"
+        echo "[2/4] Applying 'temporal' versioned migrations..."
+        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
+          -u temporal_user --pw temporal_secret_2024 \
+          --db temporal update-schema \
+          -d /etc/temporal/schema/postgresql/v12/temporal/versioned
+        echo "  -> Migrations applied"
+        echo "[3/4] Initializing 'temporal_visibility' base schema..."
+        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
+          -u temporal_user --pw temporal_secret_2024 \
+          --db temporal_visibility setup-schema -v 0.0 \
+          2>/dev/null && echo "  -> Done" || echo "  -> Already initialized (skipped)"
+        echo "[4/4] Applying 'temporal_visibility' versioned migrations..."
+        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
+          -u temporal_user --pw temporal_secret_2024 \
+          --db temporal_visibility update-schema \
+          -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+        echo "  -> Migrations applied"
+        echo "=============================================="
+        echo "  Schema migration complete"
+        echo "=============================================="
     networks:
       - ces-net
     depends_on:
@@ -159,17 +196,44 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # --- Step 4: Register Temporal namespace ---
+  # --- Step 4: Register Temporal namespace (inline) ---
   temporal-ns-register:
     image: temporalio/admin-tools:1.30.1
     container_name: ces-temporal-ns-register
     environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
-      RETENTION: "72h"
-    volumes:
-      - ./infrastructure/temporal/register-namespace.sh:/register-namespace.sh:ro
-    entrypoint: ["sh", "/register-namespace.sh"]
+      TEMPORAL_CLI_ADDRESS: temporal:7233
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "=============================================="
+        echo "  Temporal Namespace Registration"
+        echo "=============================================="
+        echo "[1/2] Waiting for Temporal server..."
+        MAX_RETRIES=60
+        RETRY_COUNT=0
+        until temporal operator cluster health 2>/dev/null | grep -q SERVING; do
+          RETRY_COUNT=$$((RETRY_COUNT + 1))
+          if [ "$$RETRY_COUNT" -ge "$$MAX_RETRIES" ]; then
+            echo "ERROR: Temporal server not ready after $$MAX_RETRIES attempts"
+            exit 1
+          fi
+          echo "  Attempt $$RETRY_COUNT/$$MAX_RETRIES - retrying in 3s..."
+          sleep 3
+        done
+        echo "  -> Temporal server is SERVING"
+        echo "[2/2] Registering namespace: default"
+        temporal operator namespace describe --namespace default > /dev/null 2>&1 \
+          && echo "  -> Already exists (skipped)" \
+          || (temporal operator namespace create \
+                --namespace default \
+                --retention 72h \
+                --description "CES workflow namespace" \
+              && echo "  -> Registered successfully")
+        echo "=============================================="
+        echo "  Namespace registration complete"
+        echo "=============================================="
     networks:
       - ces-net
     depends_on:

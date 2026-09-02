@@ -376,7 +376,19 @@ export default function PolicyDetailPage() {
                           {d.error_message && (
                             <Box mt={4}>
                               <Text size="xs" fw={500} c="dimmed" mb={2}>Connector Execution Message:</Text>
-                              <Code block style={{ background: 'rgba(0,0,0,0.4)', color: d.deployment_status === 'SUCCESS' ? '#4ade80' : '#f87171', fontSize: 12 }}>
+                              <Code
+                                block
+                                style={{
+                                  backgroundColor: '#0d1117',
+                                  color: d.deployment_status === 'SUCCESS' ? '#4ade80' : '#f87171',
+                                  fontSize: '12px',
+                                  lineHeight: 1.5,
+                                  padding: '10px 14px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #30363d',
+                                  fontFamily: 'var(--font-mono)',
+                                }}
+                              >
                                 {d.error_message}
                               </Code>
                             </Box>
@@ -404,7 +416,7 @@ export default function PolicyDetailPage() {
                   </Badge>
                 </Group>
 
-                <Tabs defaultValue="snowflake" color="violet">
+                <Tabs defaultValue="snowflake" color="indigo">
                   <Tabs.List mb="sm">
                     <Tabs.Tab value="snowflake" leftSection={<Code color="blue" size="xs">SF</Code>}>
                       Snowflake SQL
@@ -419,7 +431,21 @@ export default function PolicyDetailPage() {
 
                   <Tabs.Panel value="snowflake">
                     <Box style={{ position: 'relative' }}>
-                      <Code block style={{ maxHeight: 350, overflow: 'auto', background: 'rgba(0,0,0,0.4)', color: '#38bdf8', fontSize: 12 }}>
+                      <Code
+                        block
+                        style={{
+                          maxHeight: 380,
+                          overflow: 'auto',
+                          backgroundColor: '#0d1117',
+                          color: '#38bdf8',
+                          fontSize: '12px',
+                          lineHeight: 1.6,
+                          padding: '14px 16px',
+                          borderRadius: '6px',
+                          border: '1px solid #30363d',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
                         {compiledData.data.snowflake_sql}
                       </Code>
                     </Box>
@@ -427,7 +453,21 @@ export default function PolicyDetailPage() {
 
                   <Tabs.Panel value="redshift">
                     <Box style={{ position: 'relative' }}>
-                      <Code block style={{ maxHeight: 350, overflow: 'auto', background: 'rgba(0,0,0,0.4)', color: '#f87171', fontSize: 12 }}>
+                      <Code
+                        block
+                        style={{
+                          maxHeight: 380,
+                          overflow: 'auto',
+                          backgroundColor: '#0d1117',
+                          color: '#f87171',
+                          fontSize: '12px',
+                          lineHeight: 1.6,
+                          padding: '14px 16px',
+                          borderRadius: '6px',
+                          border: '1px solid #30363d',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
                         {compiledData.data.redshift_sql}
                       </Code>
                     </Box>
@@ -435,7 +475,21 @@ export default function PolicyDetailPage() {
 
                   <Tabs.Panel value="raw_json">
                     <Box style={{ position: 'relative' }}>
-                      <Code block style={{ maxHeight: 350, overflow: 'auto', background: 'rgba(0,0,0,0.4)', color: '#fbbf24', fontSize: 12 }}>
+                      <Code
+                        block
+                        style={{
+                          maxHeight: 380,
+                          overflow: 'auto',
+                          backgroundColor: '#0d1117',
+                          color: '#fbbf24',
+                          fontSize: '12px',
+                          lineHeight: 1.6,
+                          padding: '14px 16px',
+                          borderRadius: '6px',
+                          border: '1px solid #30363d',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
                         {JSON.stringify(compiledData.data.raw_payload, null, 2)}
                       </Code>
                     </Box>
