@@ -6,6 +6,7 @@ Generates directly-applicable Redshift SQL scripts including:
 - Automatic Table RLS enablement (ALTER TABLE ... ROW LEVEL SECURITY ON / CONJUNCTIVE)
 - Schema/Table Privileges & Inspection Queries
 """
+
 from datetime import datetime
 from typing import Any, Optional
 
@@ -56,22 +57,33 @@ class RedshiftPolicyCompiler:
         for idx, rule in enumerate(rules, 1):
             rule_name = rule.get("rule_name", f"Rule {idx}")
             effect = rule.get("effect", "ALLOW")
-            lines.append(f"-- ─── Rule #{idx}: {rule_name} (Effect: {effect}) ─────────────────────")
+            lines.append(
+                f"-- ─── Rule #{idx}: {rule_name} (Effect: {effect}) ─────────────────────"
+            )
 
             role_codes = []
             for s in rule.get("subjects", []):
-                code = s.get("role_code") or (s.get("subject_type") if s.get("subject_type") != "ROLE" else None)
+                code = s.get("role_code") or (
+                    s.get("subject_type") if s.get("subject_type") != "ROLE" else None
+                )
                 if code:
                     role_codes.append(f"ces_{code.lower()}")
 
             purposes = [
-                c.get("compare_value") for c in rule.get("conditions", [])
+                c.get("compare_value")
+                for c in rule.get("conditions", [])
                 if c.get("attribute_key") == "purpose" and c.get("compare_value")
             ]
 
             resources = rule.get("resources", [])
             if not resources:
-                resources = [{"database_name": "acme_dw", "schema_name": "public", "table_name": "customer_profiles"}]
+                resources = [
+                    {
+                        "database_name": "acme_dw",
+                        "schema_name": "public",
+                        "table_name": "customer_profiles",
+                    }
+                ]
 
             for res in resources:
                 schema_name = (res.get("schema_name") or "public").lower()
@@ -97,27 +109,39 @@ class RedshiftPolicyCompiler:
                         purpose_clause = ""
                         if purposes:
                             purpose_list = ", ".join([f"'{p}'" for p in purposes])
-                            purpose_clause = f" OR CURRENT_SETTING('ces.purpose', true) IN ({purpose_list})"
+                            purpose_clause = (
+                                f" OR CURRENT_SETTING('ces.purpose', true) IN ({purpose_list})"
+                            )
 
-                        lines.append(f"-- Native Redshift Dynamic Data Masking (DDM)")
+                        lines.append("-- Native Redshift Dynamic Data Masking (DDM)")
                         lines.append(f"CREATE MASKING POLICY {mask_policy_name}")
-                        lines.append(f"WITH (val VARCHAR)")
-                        lines.append(f"USING (")
-                        lines.append(f"  CASE")
-                        lines.append(f"    WHEN CURRENT_USER IN ('admin', 'awsuser') OR {role_checks_sql}{purpose_clause} THEN val")
+                        lines.append("WITH (val VARCHAR)")
+                        lines.append("USING (")
+                        lines.append("  CASE")
+                        lines.append(
+                            f"    WHEN CURRENT_USER IN ('admin', 'awsuser') OR {role_checks_sql}{purpose_clause} THEN val"
+                        )
                         lines.append(f"    ELSE {mask_expr}")
-                        lines.append(f"  END")
-                        lines.append(f");")
+                        lines.append("  END")
+                        lines.append(");")
                         lines.append("")
 
                         if role_codes:
                             for r in role_codes:
-                                lines.append(f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO ROLE {r};")
+                                lines.append(
+                                    f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO ROLE {r};"
+                                )
                         else:
-                            lines.append(f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO PUBLIC;")
+                            lines.append(
+                                f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO PUBLIC;"
+                            )
 
-                        lines.append(f"-- Verification: Inspect active Redshift masking policy catalog")
-                        lines.append(f"SELECT * FROM SVV_MASKING_POLICY WHERE policy_name = '{mask_policy_name}';")
+                        lines.append(
+                            "-- Verification: Inspect active Redshift masking policy catalog"
+                        )
+                        lines.append(
+                            f"SELECT * FROM SVV_MASKING_POLICY WHERE policy_name = '{mask_policy_name}';"
+                        )
                         lines.append("")
 
                     elif act_type == "FILTER_ROWS":
@@ -125,7 +149,7 @@ class RedshiftPolicyCompiler:
                         filter_val = action.get("filter_value") or "US_EAST"
                         rls_policy_name = f"rls_{table_name}_{filter_col}"
 
-                        lines.append(f"-- Native Redshift Row-Level Security (RLS)")
+                        lines.append("-- Native Redshift Row-Level Security (RLS)")
                         lines.append(f"CREATE RLS POLICY {rls_policy_name}")
                         lines.append(f"WITH ({filter_col} VARCHAR)")
                         lines.append(f"USING ({filter_col} = '{filter_val}');")
@@ -133,23 +157,39 @@ class RedshiftPolicyCompiler:
 
                         if role_codes:
                             for r in role_codes:
-                                lines.append(f"ATTACH RLS POLICY {rls_policy_name} ON {full_table_path} TO ROLE {r};")
+                                lines.append(
+                                    f"ATTACH RLS POLICY {rls_policy_name} ON {full_table_path} TO ROLE {r};"
+                                )
                         else:
-                            lines.append(f"ATTACH RLS POLICY {rls_policy_name} ON {full_table_path} TO PUBLIC;")
+                            lines.append(
+                                f"ATTACH RLS POLICY {rls_policy_name} ON {full_table_path} TO PUBLIC;"
+                            )
 
-                        lines.append(f"-- Enable Row-Level Security on Table (Required in Amazon Redshift)")
+                        lines.append(
+                            "-- Enable Row-Level Security on Table (Required in Amazon Redshift)"
+                        )
                         lines.append(f"ALTER TABLE {full_table_path} ROW LEVEL SECURITY ON;")
-                        lines.append(f"ALTER TABLE {full_table_path} ROW LEVEL SECURITY CONJUNCTIVE;")
+                        lines.append(
+                            f"ALTER TABLE {full_table_path} ROW LEVEL SECURITY CONJUNCTIVE;"
+                        )
                         lines.append("")
-                        lines.append(f"-- Verification: Inspect active Redshift RLS policy catalog")
-                        lines.append(f"SELECT * FROM SVV_RLS_POLICY WHERE policy_name = '{rls_policy_name}';")
+                        lines.append("-- Verification: Inspect active Redshift RLS policy catalog")
+                        lines.append(
+                            f"SELECT * FROM SVV_RLS_POLICY WHERE policy_name = '{rls_policy_name}';"
+                        )
                         lines.append("")
 
                     elif act_type in ("GRANT_SELECT", "GRANT_INSERT", "GRANT_UPDATE"):
-                        sql_verb = "SELECT" if act_type == "GRANT_SELECT" else "INSERT" if act_type == "GRANT_INSERT" else "UPDATE"
+                        sql_verb = (
+                            "SELECT"
+                            if act_type == "GRANT_SELECT"
+                            else "INSERT" if act_type == "GRANT_INSERT" else "UPDATE"
+                        )
                         for r in role_codes:
                             lines.append(f"GRANT USAGE ON SCHEMA {schema_name} TO ROLE {r};")
-                            lines.append(f"GRANT {sql_verb} ON TABLE {full_table_path} TO ROLE {r};")
+                            lines.append(
+                                f"GRANT {sql_verb} ON TABLE {full_table_path} TO ROLE {r};"
+                            )
                         lines.append("")
 
         return "\n".join(lines)

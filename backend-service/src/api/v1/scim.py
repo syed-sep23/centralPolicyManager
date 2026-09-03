@@ -1,12 +1,16 @@
 """SCIM 2.0 Router — Okta / Azure AD Identity & Group Attribute Sync."""
+
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header
-from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.db.session import get_db
+
+from db.session import get_db
 
 router = APIRouter()
+
 
 class SCIMUserCreate(BaseModel):
     userName: str
@@ -17,15 +21,27 @@ class SCIMUserCreate(BaseModel):
     department: Optional[str] = None
     title: Optional[str] = None
 
+
 class SCIMGroupCreate(BaseModel):
     displayName: str
     externalId: Optional[str] = None
     members: Optional[list[dict]] = None
 
+
 @router.get("/Users")
 async def list_scim_users(db: AsyncSession = Depends(get_db)):
     """SCIM 2.0 List Users Endpoint."""
-    rows = (await db.execute(text("SELECT user_id, username, email, display_name, department, job_title, is_active FROM users"))).mappings().all()
+    rows = (
+        (
+            await db.execute(
+                text(
+                    "SELECT user_id, username, email, display_name, department, job_title, is_active FROM users"
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
     resources = [
         {
             "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
@@ -37,7 +53,7 @@ async def list_scim_users(db: AsyncSession = Depends(get_db)):
             "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
                 "department": r["department"],
                 "title": r["job_title"],
-            }
+            },
         }
         for r in rows
     ]
@@ -49,10 +65,15 @@ async def list_scim_users(db: AsyncSession = Depends(get_db)):
         "Resources": resources,
     }
 
+
 @router.post("/Users", status_code=201)
 async def create_scim_user(body: SCIMUserCreate, db: AsyncSession = Depends(get_db)):
     """SCIM 2.0 Ingest User from Okta/Entra ID."""
-    email = body.emails[0]["value"] if body.emails and len(body.emails) > 0 else f"{body.userName}@acme.com"
+    email = (
+        body.emails[0]["value"]
+        if body.emails and len(body.emails) > 0
+        else f"{body.userName}@acme.com"
+    )
     try:
         res = await db.execute(
             text("""
@@ -61,7 +82,14 @@ async def create_scim_user(body: SCIMUserCreate, db: AsyncSession = Depends(get_
                 ON CONFLICT (organization_id, username) DO UPDATE SET email=EXCLUDED.email, display_name=EXCLUDED.display_name, updated_at=NOW()
                 RETURNING user_id
             """),
-            {"u": body.userName, "e": email, "d": body.displayName, "dept": body.department, "t": body.title, "a": body.active}
+            {
+                "u": body.userName,
+                "e": email,
+                "d": body.displayName,
+                "dept": body.department,
+                "t": body.title,
+                "a": body.active,
+            },
         )
         uid = res.scalar_one()
         await db.commit()
@@ -75,10 +103,13 @@ async def create_scim_user(body: SCIMUserCreate, db: AsyncSession = Depends(get_
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"SCIM user ingestion error: {str(exc)}")
 
+
 @router.get("/Groups")
 async def list_scim_groups(db: AsyncSession = Depends(get_db)):
     """SCIM 2.0 List Groups Endpoint."""
-    rows = (await db.execute(text("SELECT role_id, role_name, role_code FROM roles"))).mappings().all()
+    rows = (
+        (await db.execute(text("SELECT role_id, role_name, role_code FROM roles"))).mappings().all()
+    )
     resources = [
         {
             "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
@@ -96,6 +127,7 @@ async def list_scim_groups(db: AsyncSession = Depends(get_db)):
         "Resources": resources,
     }
 
+
 @router.post("/Groups", status_code=201)
 async def create_scim_group(body: SCIMGroupCreate, db: AsyncSession = Depends(get_db)):
     """SCIM 2.0 Ingest Group from Okta/Entra ID."""
@@ -108,7 +140,7 @@ async def create_scim_group(body: SCIMGroupCreate, db: AsyncSession = Depends(ge
                 ON CONFLICT (organization_id, role_code) DO UPDATE SET role_name=EXCLUDED.role_name, updated_at=NOW()
                 RETURNING role_id
             """),
-            {"n": body.displayName, "c": code}
+            {"n": body.displayName, "c": code},
         )
         gid = res.scalar_one()
         await db.commit()

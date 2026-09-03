@@ -1,8 +1,9 @@
-import { NavLink, Stack, Text, Group, Avatar, Box, Divider, Badge } from '@mantine/core'
+import { NavLink, Stack, Text, Group, Avatar, Box, Divider, Badge, ActionIcon, Tooltip } from '@mantine/core'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   IconShieldCheck, IconDatabase, IconUsers, IconClipboardList,
   IconRocket, IconLayoutDashboard, IconShield, IconTarget, IconSend, IconPlugConnected, IconTag,
+  IconRefresh,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
@@ -13,11 +14,10 @@ export default function AppSidebar() {
   const location = useLocation()
   const { user } = useAuthStore()
 
-  // Real-time query for pending access requests count
+  // Manual query for pending access requests count (no polling)
   const pendingQuery = useQuery({
     queryKey: ['requests-pending-count'],
     queryFn: () => requestsApi.list('PENDING'),
-    refetchInterval: 10000,
   })
   const pendingCount = (pendingQuery.data?.data ?? []).length
 
@@ -75,7 +75,7 @@ export default function AppSidebar() {
           </Box>
           <Box>
             <Group gap={4}>
-              <Text fw={700} size="sm" lh={1.2}>Immuta DSPM</Text>
+              <Text fw={700} size="sm" lh={1.2}>CES DSPM</Text>
               <Badge size="xs" color="teal" variant="light">Enterprise</Badge>
             </Group>
             <Text size="10px" c="dimmed" lh={1.2}>Data Security & Access Engine</Text>
@@ -100,11 +100,29 @@ export default function AppSidebar() {
                       label={
                         <Group justify="space-between" wrap="nowrap">
                           <Text size="xs" fw={active ? 600 : 400}>{item.label}</Text>
-                          {item.badge && (
-                            <Badge size="xs" color={item.badgeColor || 'yellow'} variant="filled">
-                              {item.badge}
-                            </Badge>
-                          )}
+                          <Group gap={4} wrap="nowrap">
+                            {item.badge && (
+                              <Badge size="xs" color={item.badgeColor || 'yellow'} variant="filled">
+                                {item.badge}
+                              </Badge>
+                            )}
+                            {item.href === '/requests' && (
+                              <Tooltip label="Refresh pending requests count" withArrow>
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="gray"
+                                  loading={pendingQuery.isFetching}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    pendingQuery.refetch()
+                                  }}
+                                >
+                                  <IconRefresh size={12} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )}
+                          </Group>
                         </Group>
                       }
                       leftSection={<item.icon size={16} stroke={1.5} />}

@@ -3,7 +3,7 @@ package policy.validate
 import rego.v1
 
 # ==============================================================================
-# Immuta-Grade Policy Specification Validator
+# CES-Grade Policy Specification Validator
 # Validates policy AST structure, rule completeness, type consistency,
 # and detects conflicting permissions before policy activation/deployment.
 # ==============================================================================

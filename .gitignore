@@ -1,0 +1,92 @@
+# ==============================================================================
+# Central Entitlement Service (CES) — Git Ignore Rules
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Python & Bytecode
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / Packaging
+build/
+dist/
+eggs/
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Testing, Coverage & Type Checking
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# ------------------------------------------------------------------------------
+# Frontend & Node.js
+# ------------------------------------------------------------------------------
+**/node_modules/
+**/frontend-service/dist/
+**/frontend-service/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+.stylelintcache
+
+# ------------------------------------------------------------------------------
+# Environment Variables & Secrets
+# ------------------------------------------------------------------------------
+.env
+*.env
+.env.local
+.env.*.local
+!.env.example
+
+# ------------------------------------------------------------------------------
+# Operating System & IDE Files
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editors & IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bak
+
+# ------------------------------------------------------------------------------
+# Logs & Databases / Runtime
+# ------------------------------------------------------------------------------
+*.log
+logs/
+*.sqlite
+*.sqlite3
+.local/

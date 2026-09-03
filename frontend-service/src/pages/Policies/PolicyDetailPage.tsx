@@ -1,6 +1,6 @@
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { policiesApi, deploymentApi, validationApi, rbacApi } from '../../api/client'
+import { policiesApi, deploymentApi, validationApi, rbacApi, connectorApi } from '../../api/client'
 import {
   Stack, Title, Group, Badge, Button, Tabs, Text, Card, Table,
   Timeline, Box, Skeleton, Alert, Code, Divider, Paper, Accordion, Anchor,
@@ -42,7 +42,38 @@ export default function PolicyDetailPage() {
   })
   const { data: compiledData } = useQuery({
     queryKey: ['compiled-policy', policyId],
-    queryFn: () => deploymentApi.compiled(policyId),
+    queryFn: async () => {
+      const res = await deploymentApi.compiled(policyId)
+      const base = res.data || {}
+      const rawPayload = base.raw_payload
+
+      let sfSql = '-- Snowflake compilation pending...'
+      let rsSql = '-- Redshift compilation pending...'
+
+      if (rawPayload) {
+        try {
+          const sfRes = await connectorApi.compileSnowflake(rawPayload)
+          sfSql = sfRes.data?.compiled_sql || sfRes.data || '-- No Snowflake DDL generated'
+        } catch (e: any) {
+          sfSql = `-- Snowflake Connector Note: ${e?.response?.data?.detail || e.message}`
+        }
+
+        try {
+          const rsRes = await connectorApi.compileRedshift(rawPayload)
+          rsSql = rsRes.data?.compiled_sql || rsRes.data || '-- No Redshift DDL generated'
+        } catch (e: any) {
+          rsSql = `-- Redshift Connector Note: ${e?.response?.data?.detail || e.message}`
+        }
+      }
+
+      return {
+        data: {
+          ...base,
+          snowflake_sql: sfSql,
+          redshift_sql: rsSql,
+        },
+      }
+    },
   })
 
   const submitMutation = useMutation({

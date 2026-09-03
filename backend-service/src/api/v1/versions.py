@@ -1,13 +1,14 @@
 """Policy Versions Router."""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.db.session import get_db
-from src.models.models import PolicyVersion, PolicyRule
-from src.schemas.schemas import VersionRead
-from src.core.auth import get_current_user, CurrentUser
+from core.auth import CurrentUser, get_current_user
+from db.session import get_db
+from models.models import PolicyRule, PolicyVersion
+from schemas.schemas import VersionRead
 
 router = APIRouter()
 
@@ -32,16 +33,23 @@ async def list_versions(
     versions = (await db.execute(stmt)).scalars().all()
 
     from sqlalchemy import text
+
     for v in versions:
-        rows = (await db.execute(
-            text("""
+        rows = (
+            (
+                await db.execute(
+                    text("""
                 SELECT pvt.platform_id, mp.platform_code, pvt.deployment_status, pvt.temporal_workflow_id, pvt.deployed_at
                 FROM policy_version_targets pvt
                 JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
                 WHERE pvt.version_id = :vid
             """),
-            {"vid": v.version_id}
-        )).mappings().all()
+                    {"vid": v.version_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
         v.targets = [dict(r) for r in rows]
 
     return versions
@@ -69,15 +77,22 @@ async def get_version(
         raise HTTPException(status_code=404, detail="Version not found")
 
     from sqlalchemy import text
-    rows = (await db.execute(
-        text("""
+
+    rows = (
+        (
+            await db.execute(
+                text("""
             SELECT pvt.platform_id, mp.platform_code, pvt.deployment_status, pvt.temporal_workflow_id, pvt.deployed_at
             FROM policy_version_targets pvt
             JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
             WHERE pvt.version_id = :vid
         """),
-        {"vid": version_id}
-    )).mappings().all()
+                {"vid": version_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
     version.targets = [dict(r) for r in rows]
 
     return version

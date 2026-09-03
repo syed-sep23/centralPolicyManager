@@ -192,7 +192,7 @@ export default function RoleManagerPage() {
       <Group justify="space-between" align="flex-start">
         <Box>
           <Group gap="xs">
-            <Badge color="indigo" variant="filled" size="sm">Immuta ABAC Model</Badge>
+            <Badge color="indigo" variant="filled" size="sm">CES ABAC Model</Badge>
             <Badge color="teal" variant="light" size="sm">Dynamic Attribute Inheritance</Badge>
           </Group>
           <Title order={2} mt={4}>Identity Governance: Users, Groups & Attributes</Title>
@@ -227,7 +227,7 @@ export default function RoleManagerPage() {
         </Group>
       </Group>
 
-      {/* ── Immuta Architecture Concept Banner ───────────────────────────────── */}
+      {/* ── CES Architecture Concept Banner ───────────────────────────────── */}
       <Paper p="md" radius="md" style={{ background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08))', border: '1px solid rgba(99, 102, 241, 0.25)' }}>
         <Group align="flex-start" gap="md">
           <ThemeIcon color="indigo" variant="light" size="lg" radius="md">
@@ -235,7 +235,7 @@ export default function RoleManagerPage() {
           </ThemeIcon>
           <Box style={{ flex: 1 }}>
             <Text fw={700} size="sm" c="indigo.4">
-              Immuta Dynamic ABAC Resolution Architecture
+              CES Dynamic ABAC Resolution Architecture
             </Text>
             <Text size="xs" c="dimmed" mt={2} style={{ lineHeight: 1.6 }}>
               Instead of maintaining brittle role-to-table access lists, policies query metadata: <Text span fw={600} c="white">@user.department == data.department</Text> or <Text span fw={600} c="white">@user.clearance_level &gt;= 'RESTRICTED'</Text>. When group attributes change, data access policies adapt across Snowflake, Redshift, and OPA automatically without manual IT provisioning tickets.
@@ -463,7 +463,7 @@ export default function RoleManagerPage() {
             <ThemeIcon color="indigo" variant="light" size="md">
               <IconId size={18} />
             </ThemeIcon>
-            <Title order={4}>Immuta ABAC Identity Resolution</Title>
+            <Title order={4}>CES ABAC Identity Resolution</Title>
           </Group>
         }
         position="right"

@@ -3,7 +3,7 @@ package policy.masking
 import rego.v1
 
 # ==============================================================================
-# Immuta-Grade Dynamic Data Masking Engine
+# CES-Grade Dynamic Data Masking Engine
 # Evaluates column-level and tag-level masking policies with dynamic exemptions
 # based on identity roles, ABAC attributes, and contextual PBAC purposes.
 # ==============================================================================
@@ -36,7 +36,7 @@ _resource_matches(rule) if {
     lower(res.column_name) == lower(input.resource.column)
 }
 
-# 2. Immuta Global Tag Scope: Rule scopes to tag (e.g. Discovered.PII.Email)
+# 2. CES Global Tag Scope: Rule scopes to tag (e.g. Discovered.PII.Email)
 # Matches if the column possesses the tag or any child tag
 _resource_matches(rule) if {
     some res in rule.resources

@@ -7,7 +7,7 @@ import {
 import {
   IconSend, IconCheck, IconX, IconClock, IconShieldCheck, IconInfoCircle,
   IconPlus, IconLock, IconChecklist, IconTrash, IconTarget, IconDatabase,
-  IconUsers, IconShieldX,
+  IconUsers, IconShieldX, IconRefresh,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
@@ -130,9 +130,24 @@ export default function SubscriptionRequestsPage() {
             Request time-bound access to data products and tables with business purpose justification and automated workflow approval.
           </Text>
         </Box>
-        <Button leftSection={<IconPlus size={16} />} color="indigo" radius="md" onClick={() => setModalOpened(true)}>
-          New Access Request
-        </Button>
+        <Group gap="xs">
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            variant="light"
+            color="indigo"
+            radius="md"
+            loading={requests.isFetching || allRequestsQuery.isFetching}
+            onClick={() => {
+              invalidateAll()
+              notifications.show({ message: 'Access requests refreshed', color: 'teal' })
+            }}
+          >
+            Refresh Requests
+          </Button>
+          <Button leftSection={<IconPlus size={16} />} color="indigo" radius="md" onClick={() => setModalOpened(true)}>
+            New Access Request
+          </Button>
+        </Group>
       </Group>
 
       {/* Real Enterprise Overview Cards */}

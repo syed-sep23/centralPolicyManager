@@ -3,7 +3,7 @@ package policy.rls
 import rego.v1
 
 # ==============================================================================
-# Immuta-Grade Row-Level Security (RLS) & Row Filtering Engine
+# CES-Grade Row-Level Security (RLS) & Row Filtering Engine
 # Evaluates row filtering rules, tenant isolation, and attribute-driven SQL predicates
 # pushed down into user query WHERE clauses.
 # ==============================================================================

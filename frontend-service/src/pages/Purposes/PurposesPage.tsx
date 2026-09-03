@@ -102,7 +102,7 @@ export default function PurposesPage() {
       <Group justify="space-between" align="flex-start">
         <Box>
           <Group gap="xs">
-            <Badge color="violet" variant="filled" size="sm">Immuta PBAC</Badge>
+            <Badge color="violet" variant="filled" size="sm">CES PBAC</Badge>
             <Badge color="teal" variant="light" size="sm">Purpose Limitation Framework</Badge>
           </Group>
           <Title order={2} mt={4}>Purpose-Based Access Control (PBAC)</Title>
@@ -136,7 +136,7 @@ export default function PurposesPage() {
               Context Over Identity: Combining PBAC with Dynamic ABAC
             </Text>
             <Text size="xs" c="dimmed" mt={2} style={{ lineHeight: 1.6 }}>
-              Under GDPR Article 5(1)(b) and HIPAA 45 CFR § 164.502(b), data collected for one reason cannot be freely queried for another. When querying platforms like Snowflake or Databricks, Immuta evaluates the active purpose (e.g. <Text span fw={600} c="white">@purpose == 'FRAUD_DETECTION'</Text>) alongside user clearance and data tags to enforce strict purpose limitation automatically.
+              Under GDPR Article 5(1)(b) and HIPAA 45 CFR § 164.502(b), data collected for one reason cannot be freely queried for another. When querying platforms like Snowflake or Databricks, CES evaluates the active purpose (e.g. <Text span fw={600} c="white">@purpose == 'FRAUD_DETECTION'</Text>) alongside user clearance and data tags to enforce strict purpose limitation automatically.
             </Text>
           </Box>
         </Group>

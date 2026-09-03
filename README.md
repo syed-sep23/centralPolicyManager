@@ -255,16 +255,17 @@ erDiagram
 
 When deployed with Docker Compose, CES provisions the following coordinated services:
 
-| Container Name | Service | Technology | Port / Endpoint | Purpose |
-| --- | --- | --- | --- | --- |
-| `ces-frontend` | Control Plane UI | React 18 / Mantine / Vite / Nginx | [**http://localhost:80**](http://localhost:80) | DSPM Dashboard, Policy Studio, Identity & PBAC Studio |
-| `ces-backend-service` | Core API | FastAPI / Python 3.12 / AsyncPG | [**http://localhost:8000/docs**](http://localhost:8000/docs) | REST API, Compiler Engine, SCIM Ingestion |
-| `ces-postgres` | System Catalog DB | PostgreSQL 16 Alpine | `localhost:5433` (mapped) | Core relational storage (`ces_db`) |
-| `ces-opa` | Policy Evaluation Engine | Open Policy Agent | `http://localhost:8181/` | Declarative sub-millisecond Rego decision engine |
-| `ces-temporal` | Workflow Engine | Temporalio Server 1.24 | `temporal:7233` | Durable execution for multi-engine deployments |
-| `ces-temporal-ui` | Workflow Dashboard | Temporal Web UI | [**http://localhost:8088**](http://localhost:8088) | Live visualization of policy deployment runs |
-| `ces-snowflake-connector` | Snowflake Agent | FastAPI / Snowflake-Python Driver | `http://localhost:8006/` | Native Snowflake compiler & test connector |
-| `ces-redshift-connector` | Redshift Agent | FastAPI / Redshift Connector / Psycopg2 | `http://localhost:8007/` | Native Redshift DDM compiler & test connector |
+| Container Name | Service | Technology | Gateway Route (Port 80) | Direct Port | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `ces-traefik` | Edge Gateway | Traefik v3.1 | [**http://localhost:80**](http://localhost:80) & [**:8080**](http://localhost:8080/dashboard/) | `:80`, `:8080` | Unified Ingress, Reverse Proxy, Security Middlewares & UI Dashboard |
+| `ces-frontend` | Control Plane UI | React 18 / Mantine / Vite / Node serve | [**http://localhost/**](http://localhost/) | Internal `:80` | DSPM Dashboard, Policy Studio, Identity & PBAC Studio |
+| `ces-backend-service` | Core API | FastAPI / Python 3.12 / AsyncPG | [**http://localhost/api/v1**](http://localhost/api/v1) & [**/docs**](http://localhost/docs) | `:8000` | REST API, Compiler Engine, SCIM Ingestion |
+| `ces-snowflake-connector` | Snowflake Agent | FastAPI / Snowflake-Python Driver | [**http://localhost/connectors/snowflake**](http://localhost/connectors/snowflake/health) | `:8006` | Native Snowflake dynamic masking & RAP compiler |
+| `ces-redshift-connector` | Redshift Agent | FastAPI / Redshift Connector / Psycopg2 | [**http://localhost/connectors/redshift**](http://localhost/connectors/redshift/health) | `:8007` | Native Redshift DDM & RLS compiler |
+| `ces-opa` | Policy Evaluation Engine | Open Policy Agent | [**http://localhost/opa/v1/data**](http://localhost/opa/v1/data) | `:8181` | Declarative sub-millisecond Rego decision engine |
+| `ces-temporal-ui` | Workflow Dashboard | Temporal Web UI | [**http://localhost/temporal**](http://localhost/temporal) | `:8088` | Live visualization of policy deployment runs |
+| `ces-temporal` | Workflow Engine | Temporalio Server 1.24 | Internal | `:7233` | Durable execution for multi-engine deployments |
+| `ces-postgres` | System Catalog DB | PostgreSQL 16 Alpine | Internal | `:5433` (mapped) | Core relational storage (`ces_db`) |
 
 ---
 
@@ -291,10 +292,11 @@ docker compose up -d --build
 
 Wait 30–45 seconds for database migrations, Temporal schema registration, and frontend compilation to initialize. Then verify:
 
-1. Open [**http://localhost/dashboard**](http://localhost/dashboard) to view the live **Data Security Posture (DSPM)** dashboard.
+1. Open [**http://localhost/dashboard**](http://localhost/dashboard) to view the live **Data Security Posture (DSPM)** dashboard (routed via Traefik).
 2. Open [**http://localhost/policies**](http://localhost/policies) to view active data access policies.
-3. Open [**http://localhost:8000/docs**](http://localhost:8000/docs) to inspect the OpenAPI / Swagger documentation.
-4. Open [**http://localhost:8088**](http://localhost:8088) to view the Temporal Workflow Execution dashboard.
+3. Open [**http://localhost/docs**](http://localhost/docs) (or `http://localhost:8000/docs`) to inspect the OpenAPI / Swagger documentation.
+4. Open [**http://localhost:8080/dashboard/**](http://localhost:8080/dashboard/) to inspect the Traefik v3 Edge Gateway & Router Dashboard (`admin` / `adminpassword123`).
+5. Open [**http://localhost:8088**](http://localhost:8088) to view the Temporal Workflow Execution dashboard.
 
 ---
 

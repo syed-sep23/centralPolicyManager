@@ -1,18 +1,22 @@
 """Policy business logic — create, update, submit, rollback, deprecate."""
+
 from __future__ import annotations
 
-import httpx
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.core.config import settings
-from src.models.models import (
-    Policy, PolicyVersion, PolicyRule,
-    PolicyRuleSubject, PolicyRuleAction, PolicyRuleCondition, PolicyRuleResource,
+from models.models import (
+    Policy,
+    PolicyRule,
+    PolicyRuleAction,
+    PolicyRuleCondition,
+    PolicyRuleResource,
+    PolicyRuleSubject,
+    PolicyVersion,
 )
-from src.schemas.schemas import PolicyCreate, PolicyUpdate
+from schemas.schemas import PolicyCreate, PolicyUpdate
 
 log = structlog.get_logger()
 
@@ -22,27 +26,35 @@ class PolicyService:
         self.db = db
 
     async def list_policies(
-        self, org_id: int, page: int, size: int,
+        self,
+        org_id: int,
+        page: int,
+        size: int,
         status_filter: str | None = None,
         domain_id: int | None = None,
     ) -> tuple[int, list[Policy]]:
         from sqlalchemy import text
+
         stmt = select(Policy).where(Policy.organization_id == org_id)
         if status_filter:
             stmt = stmt.where(Policy.status == status_filter)
         if domain_id:
             stmt = stmt.where(Policy.domain_id == domain_id)
 
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+        total = (
+            await self.db.execute(select(func.count()).select_from(stmt.subquery()))
+        ).scalar_one()
         items = (await self.db.execute(stmt.offset((page - 1) * size).limit(size))).scalars().all()
 
         for p in items:
             ver_status = None
             if p.current_version_id:
-                ver_row = (await self.db.execute(
-                    text("SELECT status FROM policy_versions WHERE version_id = :v"),
-                    {"v": p.current_version_id}
-                )).first()
+                ver_row = (
+                    await self.db.execute(
+                        text("SELECT status FROM policy_versions WHERE version_id = :v"),
+                        {"v": p.current_version_id},
+                    )
+                ).first()
                 if ver_row:
                     ver_status = ver_row[0]
 
@@ -121,9 +133,12 @@ class PolicyService:
 
         if data.target_platform_ids:
             from sqlalchemy import text
+
             for pid in data.target_platform_ids:
                 await self.db.execute(
-                    text("INSERT INTO policy_version_targets (version_id, platform_id) VALUES (:v, :p) ON CONFLICT DO NOTHING"),
+                    text(
+                        "INSERT INTO policy_version_targets (version_id, platform_id) VALUES (:v, :p) ON CONFLICT DO NOTHING"
+                    ),
                     {"v": version.version_id, "p": pid},
                 )
 
@@ -163,10 +178,19 @@ class PolicyService:
 
         if version_id:
             from sqlalchemy import text
-            rows = (await self.db.execute(
-                text("SELECT platform_id FROM policy_version_targets WHERE version_id = :v"),
-                {"v": version_id}
-            )).scalars().all()
+
+            rows = (
+                (
+                    await self.db.execute(
+                        text(
+                            "SELECT platform_id FROM policy_version_targets WHERE version_id = :v"
+                        ),
+                        {"v": version_id},
+                    )
+                )
+                .scalars()
+                .all()
+            )
             policy.target_platform_ids = list(rows)
 
         # Set current_version
@@ -180,7 +204,9 @@ class PolicyService:
         return policy
 
     async def update_policy(self, policy_id: int, data: PolicyUpdate) -> Policy | None:
-        policy = (await self.db.execute(select(Policy).where(Policy.policy_id == policy_id))).scalar_one_or_none()
+        policy = (
+            await self.db.execute(select(Policy).where(Policy.policy_id == policy_id))
+        ).scalar_one_or_none()
         if not policy:
             return None
 
@@ -191,10 +217,10 @@ class PolicyService:
         for field, value in update_dict.items():
             setattr(policy, field, value)
 
-        from sqlalchemy import text
-
         # Get active version to update
-        version_stmt = select(PolicyVersion).where(PolicyVersion.policy_id == policy_id, PolicyVersion.is_current == True)
+        version_stmt = select(PolicyVersion).where(
+            PolicyVersion.policy_id == policy_id, PolicyVersion.is_current.is_(True)
+        )
         version = (await self.db.execute(version_stmt)).scalar_one_or_none()
 
         if version and version.status == "DEPLOYED":
@@ -218,7 +244,10 @@ class PolicyService:
 
         if version:
             if rules_data is not None:
-                await self.db.execute(text("DELETE FROM policy_rules WHERE version_id = :v"), {"v": version.version_id})
+                await self.db.execute(
+                    text("DELETE FROM policy_rules WHERE version_id = :v"),
+                    {"v": version.version_id},
+                )
                 for rule_data in data.rules or []:
                     rule = PolicyRule(
                         version_id=version.version_id,
@@ -240,10 +269,15 @@ class PolicyService:
                         self.db.add(PolicyRuleResource(rule_id=rule.rule_id, **r.model_dump()))
 
             if target_platform_ids is not None:
-                await self.db.execute(text("DELETE FROM policy_version_targets WHERE version_id = :v"), {"v": version.version_id})
+                await self.db.execute(
+                    text("DELETE FROM policy_version_targets WHERE version_id = :v"),
+                    {"v": version.version_id},
+                )
                 for pid in target_platform_ids:
                     await self.db.execute(
-                        text("INSERT INTO policy_version_targets (version_id, platform_id) VALUES (:v, :p) ON CONFLICT DO NOTHING"),
+                        text(
+                            "INSERT INTO policy_version_targets (version_id, platform_id) VALUES (:v, :p) ON CONFLICT DO NOTHING"
+                        ),
                         {"v": version.version_id, "p": pid},
                     )
 
@@ -252,7 +286,9 @@ class PolicyService:
         return policy
 
     async def deprecate_policy(self, policy_id: int) -> None:
-        policy = (await self.db.execute(select(Policy).where(Policy.policy_id == policy_id))).scalar_one_or_none()
+        policy = (
+            await self.db.execute(select(Policy).where(Policy.policy_id == policy_id))
+        ).scalar_one_or_none()
         if policy:
             policy.status = "DEPRECATED"
             await self.db.flush()

@@ -1,13 +1,18 @@
 """Data Entitlement & Subscription Requests Router."""
-from datetime import datetime, timedelta, timezone
+
+import uuid
+from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.db.session import get_db
+
+from db.session import get_db
 
 router = APIRouter()
+
 
 class RequestCreate(BaseModel):
     user_id: int = 1
@@ -17,32 +22,28 @@ class RequestCreate(BaseModel):
     reason: str
     duration_days: int = 30
 
+
 @router.get("")
-async def list_requests(
-    status: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
-):
+async def list_requests(status: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
     query = """
-        SELECT 
-            r.request_id, 
-            r.user_id, 
-            u.username, 
-            u.email, 
-            r.table_id, 
-            mt.table_name,
+        SELECT
+            r.request_id,
+            r.request_number,
+            r.requestor_id AS user_id,
+            u.username,
+            u.email,
             r.product_id,
-            p.product_name, 
-            pr.purpose_name, 
+            p.product_name,
+            pr.purpose_name,
             pr.purpose_code,
-            r.reason, 
-            r.status, 
-            r.approved_by, 
-            r.created_at, 
-            r.expires_at
+            r.justification AS reason,
+            r.status,
+            r.reviewed_by_id AS approved_by,
+            r.created_at,
+            (r.created_at + (r.valid_for_days || ' days')::INTERVAL) AS expires_at
         FROM data_access_requests r
-        JOIN users u ON r.user_id = u.user_id
+        JOIN users u ON r.requestor_id = u.user_id
         LEFT JOIN data_products p ON r.product_id = p.product_id
-        LEFT JOIN metadata_tables mt ON r.table_id = mt.table_id
         LEFT JOIN purposes pr ON r.purpose_id = pr.purpose_id
     """
     params = {}
@@ -50,54 +51,61 @@ async def list_requests(
         query += " WHERE r.status = :s"
         params["s"] = status.upper()
     query += " ORDER BY r.created_at DESC"
-    
+
     rows = (await db.execute(text(query), params)).mappings().all()
     return [dict(r) for r in rows]
 
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_request(body: RequestCreate, db: AsyncSession = Depends(get_db)):
-    expires_at = datetime.now(timezone.utc) + timedelta(days=max(1, body.duration_days))
+    req_num = f"REQ-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     res = await db.execute(
         text("""
-            INSERT INTO data_access_requests (user_id, table_id, product_id, purpose_id, reason, status, expires_at)
-            VALUES (:u, :t, :p, :purp, :r, 'PENDING', :exp)
-            RETURNING request_id, status, created_at, expires_at
+            INSERT INTO data_access_requests (request_number, requestor_id, product_id, purpose_id, justification, valid_for_days, status)
+            VALUES (:num, :u, :p, :purp, :r, :days, 'PENDING')
+            RETURNING request_id, request_number, status, created_at
         """),
         {
+            "num": req_num,
             "u": body.user_id,
-            "t": body.table_id,
             "p": body.product_id,
             "purp": body.purpose_id,
             "r": body.reason,
-            "exp": expires_at,
-        }
+            "days": max(1, body.duration_days),
+        },
     )
     row = res.mappings().first()
     await db.commit()
     return dict(row)
 
+
 @router.post("/{request_id}/approve")
 async def approve_request(request_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(
-        text("UPDATE data_access_requests SET status = 'APPROVED', approved_by = 'admin', updated_at = NOW() WHERE request_id = :id"),
-        {"id": request_id}
+        text(
+            "UPDATE data_access_requests SET status = 'APPROVED', reviewed_by_id = 1, reviewed_at = NOW(), updated_at = NOW() WHERE request_id = :id"
+        ),
+        {"id": request_id},
     )
     await db.commit()
     return {"status": "APPROVED", "request_id": request_id}
 
+
 @router.post("/{request_id}/reject")
 async def reject_request(request_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(
-        text("UPDATE data_access_requests SET status = 'REJECTED', approved_by = 'admin', updated_at = NOW() WHERE request_id = :id"),
-        {"id": request_id}
+        text(
+            "UPDATE data_access_requests SET status = 'REJECTED', reviewed_by_id = 1, reviewed_at = NOW(), updated_at = NOW() WHERE request_id = :id"
+        ),
+        {"id": request_id},
     )
     await db.commit()
     return {"status": "REJECTED", "request_id": request_id}
 
+
 @router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_request(request_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(
-        text("DELETE FROM data_access_requests WHERE request_id = :id"),
-        {"id": request_id}
+        text("DELETE FROM data_access_requests WHERE request_id = :id"), {"id": request_id}
     )
     await db.commit()

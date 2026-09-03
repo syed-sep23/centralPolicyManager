@@ -1,15 +1,19 @@
 """Redshift Connector — translate, test, and apply policies as Redshift-native constructs."""
-import time
-from typing import Optional
-from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException
+import time
+from functools import lru_cache
+from typing import Optional
+
+import structlog
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import structlog
+
+from src.compiler import RedshiftPolicyCompiler
 
 log = structlog.get_logger()
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -18,12 +22,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     ENVIRONMENT: str = "development"
 
+
 @lru_cache
-def get_settings(): return Settings()
+def get_settings():
+    return Settings()
+
+
 settings = get_settings()
 
 app = FastAPI(title="Central Entitlement Service (CES) — Redshift Connector", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
 
 class ApplyRequest(BaseModel):
     policy_id: int
@@ -32,11 +41,13 @@ class ApplyRequest(BaseModel):
     sql_ddl: Optional[str] = None
     raw_policy: Optional[dict] = None
 
+
 class ApplyResponse(BaseModel):
     success: bool
     applied_constructs: list[str]
     skipped: bool = False
     message: str = ""
+
 
 class TestConnectionPayload(BaseModel):
     host: Optional[str] = None
@@ -45,9 +56,11 @@ class TestConnectionPayload(BaseModel):
     db_user: Optional[str] = None
     db_password: Optional[str] = None
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "redshift-connector"}
+
 
 @app.post("/api/v1/test-connection")
 async def test_redshift_connection(body: TestConnectionPayload):
@@ -63,11 +76,15 @@ async def test_redshift_connection(body: TestConnectionPayload):
     password = body.db_password or ""
 
     if not host or not user:
-        return {"status": "FAILED", "message": "Missing required Redshift Cluster Host Endpoint or User Name."}
+        return {
+            "status": "FAILED",
+            "message": "Missing required Redshift Cluster Host Endpoint or User Name.",
+        }
 
     try:
         try:
             import redshift_connector
+
             conn = redshift_connector.connect(
                 host=host,
                 port=port,
@@ -78,6 +95,7 @@ async def test_redshift_connection(body: TestConnectionPayload):
             )
         except ImportError:
             import psycopg2
+
             conn = psycopg2.connect(
                 host=host,
                 port=port,
@@ -110,7 +128,6 @@ async def test_redshift_connection(body: TestConnectionPayload):
             "latency_ms": latency,
         }
 
-from src.compiler import RedshiftPolicyCompiler
 
 @app.post("/api/v1/compile")
 async def compile_redshift_policy(body: dict):
@@ -118,15 +135,19 @@ async def compile_redshift_policy(body: dict):
     compiler = RedshiftPolicyCompiler()
     return {"platform": "REDSHIFT", "compiled_sql": compiler.compile(body)}
 
+
 @app.post("/api/v1/apply", response_model=ApplyResponse)
 async def apply_policy(body: ApplyRequest):
-    return ApplyResponse(success=True, applied_constructs=[], message="Policy applied via Redshift Connector")
+    return ApplyResponse(
+        success=True, applied_constructs=[], message="Policy applied via Redshift Connector"
+    )
+
 
 @app.post("/api/v1/revoke")
 async def revoke_policy(body: ApplyRequest):
     return {"success": True, "revoked_constructs": []}
 
+
 @app.get("/api/v1/verify/{version_id}")
 async def verify_deployment(version_id: int):
     return {"verified": True}
-

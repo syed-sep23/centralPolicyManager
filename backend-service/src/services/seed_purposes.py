@@ -1,10 +1,15 @@
 import asyncio
+
 from sqlalchemy import text
-from src.db.session import AsyncSessionLocal
+
+from db.session import AsyncSessionLocal
+
 
 async def seed_purposes():
     async with AsyncSessionLocal() as session:
-        org_row = (await session.execute(text("SELECT organization_id FROM organizations LIMIT 1"))).first()
+        org_row = (
+            await session.execute(text("SELECT organization_id FROM organizations LIMIT 1"))
+        ).first()
         org_id = org_row.organization_id if org_row else 1
 
         purposes = [
@@ -59,7 +64,8 @@ async def seed_purposes():
         ]
 
         for code, name, desc, mandate, max_sens, ret_days in purposes:
-            await session.execute(text("""
+            await session.execute(
+                text("""
                 INSERT INTO purposes (organization_id, purpose_code, purpose_name, description, regulatory_mandate, max_sensitivity, retention_days)
                 VALUES (:org, :code, :name, :desc, :mandate, :max_sens, :ret_days)
                 ON CONFLICT (purpose_code) DO UPDATE SET
@@ -68,21 +74,25 @@ async def seed_purposes():
                     regulatory_mandate = EXCLUDED.regulatory_mandate,
                     max_sensitivity = EXCLUDED.max_sensitivity,
                     retention_days = EXCLUDED.retention_days;
-            """), {
-                "org": org_id,
-                "code": code,
-                "name": name,
-                "desc": desc,
-                "mandate": mandate,
-                "max_sens": max_sens,
-                "ret_days": ret_days,
-            })
+            """),
+                {
+                    "org": org_id,
+                    "code": code,
+                    "name": name,
+                    "desc": desc,
+                    "mandate": mandate,
+                    "max_sens": max_sens,
+                    "ret_days": ret_days,
+                },
+            )
 
         await session.commit()
 
         # Authorize users for purposes
         users = (await session.execute(text("SELECT user_id, username FROM users"))).fetchall()
-        p_rows = (await session.execute(text("SELECT purpose_id, purpose_code FROM purposes"))).fetchall()
+        p_rows = (
+            await session.execute(text("SELECT purpose_id, purpose_code FROM purposes"))
+        ).fetchall()
         p_map = {p[1]: p[0] for p in p_rows}
 
         for u in users:
@@ -92,34 +102,44 @@ async def seed_purposes():
                 for p_code in ["FRAUD_DETECTION", "REGULATORY_AUDIT"]:
                     pid = p_map.get(p_code)
                     if pid:
-                        await session.execute(text("""
+                        await session.execute(
+                            text("""
                             INSERT INTO user_purposes (user_id, purpose_id)
                             VALUES (:u, :p)
                             ON CONFLICT DO NOTHING;
-                        """), {"u": uid, "p": pid})
+                        """),
+                            {"u": uid, "p": pid},
+                        )
 
             # Grant DATA_SCIENCE_RESEARCH to users 2 and 3
             if uid in (2, 3):
                 pid = p_map.get("DATA_SCIENCE_RESEARCH")
                 if pid:
-                    await session.execute(text("""
+                    await session.execute(
+                        text("""
                         INSERT INTO user_purposes (user_id, purpose_id)
                         VALUES (:u, :p)
                         ON CONFLICT DO NOTHING;
-                    """), {"u": uid, "p": pid})
+                    """),
+                        {"u": uid, "p": pid},
+                    )
 
             # Grant CUSTOMER_SERVICE_SUPPORT to user 4
             if uid == 4:
                 pid = p_map.get("CUSTOMER_SERVICE_SUPPORT")
                 if pid:
-                    await session.execute(text("""
+                    await session.execute(
+                        text("""
                         INSERT INTO user_purposes (user_id, purpose_id)
                         VALUES (:u, :p)
                         ON CONFLICT DO NOTHING;
-                    """), {"u": uid, "p": pid})
+                    """),
+                        {"u": uid, "p": pid},
+                    )
 
         await session.commit()
-        print("SUCCESS: Seeded Immuta PBAC purposes and user purpose authorizations.")
+        print("SUCCESS: Seeded CES PBAC purposes and user purpose authorizations.")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_purposes())

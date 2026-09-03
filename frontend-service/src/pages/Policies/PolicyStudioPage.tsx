@@ -13,7 +13,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
-import { policiesApi, metadataApi, rbacApi, purposesApi } from '../../api/client'
+import { policiesApi, metadataApi, rbacApi, purposesApi, connectorApi } from '../../api/client'
 
 // ─── Policy Archetypes ────────────────────────────────────────────────────────
 type PolicyArchetype = 'DATA_MASKING' | 'ROW_FILTER' | 'SUBSCRIPTION_ACCESS'
@@ -55,42 +55,42 @@ const MASKING_TECHNIQUES = [
 ]
 
 export default function PolicyStudioPage() {
-  const { id }       = useParams<{ id?: string }>()
-  const isEditing    = !!id
-  const policyId     = id ? parseInt(id) : null
-  const navigate     = useNavigate()
-  const queryClient  = useQueryClient()
+  const { id } = useParams<{ id?: string }>()
+  const isEditing = !!id
+  const policyId = id ? parseInt(id) : null
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [activeStep, setActiveStep] = useState(0)
 
   // ─── Step 1: Policy Meta & Archetype ─────────────────────────────────────────
-  const [policyName,   setPolicyName]   = useState('')
-  const [policyCode,   setPolicyCode]   = useState('')
-  const [description,  setDescription]  = useState('')
-  const [enforceMode,  setEnforceMode]  = useState<'ADVISORY' | 'ENFORCED'>('ENFORCED')
-  const [archetype,    setArchetype]    = useState<PolicyArchetype>('DATA_MASKING')
+  const [policyName, setPolicyName] = useState('')
+  const [policyCode, setPolicyCode] = useState('')
+  const [description, setDescription] = useState('')
+  const [enforceMode, setEnforceMode] = useState<'ADVISORY' | 'ENFORCED'>('ENFORCED')
+  const [archetype, setArchetype] = useState<PolicyArchetype>('DATA_MASKING')
 
   // ─── Step 2: Global Scope & Triggers ─────────────────────────────────────────
-  const [scopeType,    setScopeType]    = useState<'GLOBAL_TAG' | 'TARGETED'>('GLOBAL_TAG')
+  const [scopeType, setScopeType] = useState<'GLOBAL_TAG' | 'TARGETED'>('GLOBAL_TAG')
   const [selectedTags, setSelectedTags] = useState<string[]>(['PII.EMAIL'])
-  const [domainId,     setDomainId]     = useState<string | null>(null)
-  const [productId,    setProductId]    = useState<string | null>(null)
+  const [domainId, setDomainId] = useState<string | null>(null)
+  const [productId, setProductId] = useState<string | null>(null)
   const [targetPlatforms, setTargetPlatforms] = useState<string[]>([])
 
-  // ─── Step 3: Action & Circumstance (Immuta DSL) ──────────────────────────────
-  const [targetColumn,     setTargetColumn]     = useState('EMAIL')
-  const [maskType,         setMaskType]         = useState('HASH_SHA256')
-  const [customMaskExpr,   setCustomMaskExpr]   = useState('SHA2(val, 256)')
-  const [filterColumn,     setFilterColumn]     = useState('REGION')
-  const [filterOperator,   setFilterOperator]   = useState('EQ')
-  const [filterValueType,  setFilterValueType]  = useState<'USER_ATTRIBUTE' | 'LITERAL'>('USER_ATTRIBUTE')
-  const [filterValue,      setFilterValue]      = useState('department')
+  // ─── Step 3: Action & Circumstance (CES DSL) ──────────────────────────────
+  const [targetColumn, setTargetColumn] = useState('EMAIL')
+  const [maskType, setMaskType] = useState('HASH_SHA256')
+  const [customMaskExpr, setCustomMaskExpr] = useState('SHA2(val, 256)')
+  const [filterColumn, setFilterColumn] = useState('REGION')
+  const [filterOperator, setFilterOperator] = useState('EQ')
+  const [filterValueType, setFilterValueType] = useState<'USER_ATTRIBUTE' | 'LITERAL'>('USER_ATTRIBUTE')
+  const [filterValue, setFilterValue] = useState('department')
 
   // Exceptions / Circumstances
-  const [exemptRoles,      setExemptRoles]      = useState<string[]>([])
-  const [exemptPurposes,   setExemptPurposes]   = useState<string[]>([])
-  const [userAttrKey,      setUserAttrKey]      = useState('')
-  const [userAttrOp,       setUserAttrOp]       = useState('EQ')
-  const [userAttrVal,      setUserAttrVal]      = useState('')
+  const [exemptRoles, setExemptRoles] = useState<string[]>([])
+  const [exemptPurposes, setExemptPurposes] = useState<string[]>([])
+  const [userAttrKey, setUserAttrKey] = useState('')
+  const [userAttrOp, setUserAttrOp] = useState('EQ')
+  const [userAttrVal, setUserAttrVal] = useState('')
 
   // ─── Step 4: Preview Simulation ──────────────────────────────────────────────
   const [previewResult, setPreviewResult] = useState<{
@@ -102,13 +102,13 @@ export default function PolicyStudioPage() {
   const [isSimulating, setIsSimulating] = useState(false)
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
-  const domains    = useQuery({ queryKey: ['domains'],    queryFn: () => metadataApi.domains() })
-  const products   = useQuery({ queryKey: ['products', domainId], queryFn: () => metadataApi.products(domainId ? parseInt(domainId) : undefined), enabled: !!domainId })
-  const platforms  = useQuery({ queryKey: ['platforms'],  queryFn: () => metadataApi.platforms() })
-  const roles      = useQuery({ queryKey: ['roles'],      queryFn: () => rbacApi.roles() })
-  const tags       = useQuery({ queryKey: ['tags'],       queryFn: () => metadataApi.tags() })
-  const purposes   = useQuery({ queryKey: ['purposes'],   queryFn: () => purposesApi.list() })
-  const existing   = useQuery({
+  const domains = useQuery({ queryKey: ['domains'], queryFn: () => metadataApi.domains() })
+  const products = useQuery({ queryKey: ['products', domainId], queryFn: () => metadataApi.products(domainId ? parseInt(domainId) : undefined), enabled: !!domainId })
+  const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
+  const roles = useQuery({ queryKey: ['roles'], queryFn: () => rbacApi.roles() })
+  const tags = useQuery({ queryKey: ['tags'], queryFn: () => metadataApi.tags() })
+  const purposes = useQuery({ queryKey: ['purposes'], queryFn: () => purposesApi.list() })
+  const existing = useQuery({
     queryKey: ['policy-detail', policyId],
     queryFn: () => policiesApi.get(policyId!),
     enabled: isEditing && !!policyId,
@@ -213,7 +213,7 @@ export default function PolicyStudioPage() {
     return opts
   }, [platforms.data])
 
-  // ─── Live Natural Language Summary Builder (Immuta DSL) ──────────────────────
+  // ─── Live Natural Language Summary Builder (CES DSL) ──────────────────────
   const naturalLanguageText = useMemo(() => {
     const targetScopeStr = scopeType === 'GLOBAL_TAG'
       ? (selectedTags.length ? `columns/tables tagged with [${selectedTags.join(', ')}]` : 'all tagged data assets')
@@ -246,8 +246,8 @@ export default function PolicyStudioPage() {
     const actionType = archetype === 'DATA_MASKING'
       ? 'MASK_COLUMN'
       : archetype === 'ROW_FILTER'
-      ? 'FILTER_ROWS'
-      : 'GRANT_SELECT'
+        ? 'FILTER_ROWS'
+        : 'GRANT_SELECT'
 
     const conditions: any[] = []
     exemptPurposes.forEach((p) => {
@@ -283,9 +283,9 @@ export default function PolicyStudioPage() {
     }))
 
     return {
-      policy_name: policyName.trim() || 'Immuta Global Security Policy',
+      policy_name: policyName.trim() || 'CES Global Security Policy',
       policy_code: policyCode.trim() || 'GLOBAL_SECURITY_POLICY',
-      description: description.trim() || 'Global data protection and masking policy configured via Immuta Policy Builder.',
+      description: description.trim() || 'Global data protection and masking policy configured via CES Policy Builder.',
       enforce_mode: enforceMode,
       domain_id: domainId ? parseInt(domainId) : undefined,
       product_id: productId ? parseInt(productId) : undefined,
@@ -303,13 +303,39 @@ export default function PolicyStudioPage() {
     }
   }
 
-  // Trigger preview compilation
+  // Trigger preview compilation — calls backend for OPA Rego and connectors directly for native DDL
   const handleSimulateCompiler = async () => {
     setIsSimulating(true)
     try {
       const draft = constructDraftPayload()
-      const resp = await policiesApi.previewCompile(draft)
-      setPreviewResult(resp.data)
+
+      // 1. Fetch OPA Rego & universal summary from backend
+      const backendResp = await policiesApi.previewCompile(draft)
+      const baseResult = backendResp.data || {}
+
+      // 2. Fetch Snowflake DDL directly from Snowflake Connector via Traefik Gateway
+      let snowflakeSql = '-- Snowflake compilation pending...'
+      try {
+        const sfResp = await connectorApi.compileSnowflake(draft)
+        snowflakeSql = sfResp.data?.compiled_sql || sfResp.data || '-- No Snowflake DDL generated'
+      } catch (sfErr: any) {
+        snowflakeSql = `-- Snowflake Connector Note: ${sfErr?.response?.data?.detail || sfErr.message || 'Direct connector call failed'}`
+      }
+
+      // 3. Fetch Redshift DDL directly from Redshift Connector via Traefik Gateway
+      let redshiftSql = '-- Redshift compilation pending...'
+      try {
+        const rsResp = await connectorApi.compileRedshift(draft)
+        redshiftSql = rsResp.data?.compiled_sql || rsResp.data || '-- No Redshift DDL generated'
+      } catch (rsErr: any) {
+        redshiftSql = `-- Redshift Connector Note: ${rsErr?.response?.data?.detail || rsErr.message || 'Direct connector call failed'}`
+      }
+
+      setPreviewResult({
+        ...baseResult,
+        snowflake_sql: snowflakeSql,
+        redshift_sql: redshiftSql,
+      })
     } catch (err: any) {
       notifications.show({
         title: 'Simulation Error',
@@ -355,8 +381,8 @@ export default function PolicyStudioPage() {
   const isStep3Valid = archetype === 'DATA_MASKING'
     ? Boolean(targetColumn.trim().length >= 2 && (maskType !== 'CUSTOM' || customMaskExpr.trim().length >= 3))
     : archetype === 'ROW_FILTER'
-    ? Boolean(filterColumn.trim().length >= 2 && filterValue.trim().length >= 1)
-    : Boolean(exemptRoles.length > 0 || exemptPurposes.length > 0 || (userAttrKey.trim().length > 0 && userAttrVal.trim().length > 0))
+      ? Boolean(filterColumn.trim().length >= 2 && filterValue.trim().length >= 1)
+      : Boolean(exemptRoles.length > 0 || exemptPurposes.length > 0 || (userAttrKey.trim().length > 0 && userAttrVal.trim().length > 0))
 
   const handleStepClick = (target: number) => {
     if (target === 1 && !isStep1Valid) return
@@ -374,24 +400,16 @@ export default function PolicyStudioPage() {
             <Button variant="subtle" size="xs" color="gray" leftSection={<IconArrowLeft size={14} />} onClick={() => navigate('/policies')}>
               Back to Policies
             </Button>
-            <Badge color="violet" variant="filled" size="sm">Immuta Global Policy Engine</Badge>
+            <Badge color="violet" variant="filled" size="sm">CES Global Policy Engine</Badge>
           </Group>
           <Title order={2} mt={4}>
-            {isEditing ? `Edit Global Policy: ${policyName}` : 'Immuta Global Policy Builder'}
+            {isEditing ? `Edit Global Policy: ${policyName}` : 'CES Global Policy Builder'}
           </Title>
           <Text c="dimmed" size="sm">
             Compose universal data masking, row-level access control, and subscription policies with global tag triggers across all cloud platforms.
           </Text>
         </Box>
         <Group>
-          <Button
-            variant="default"
-            leftSection={<IconCode size={16} />}
-            loading={isSimulating}
-            onClick={handleSimulateCompiler}
-          >
-            Simulate DDL
-          </Button>
           <Button
             color="violet"
             leftSection={<IconSend size={16} />}
@@ -413,7 +431,7 @@ export default function PolicyStudioPage() {
           <Box style={{ flex: 1 }}>
             <Group justify="space-between" mb={2}>
               <Text size="xs" fw={700} tt="uppercase" c="violet.4">
-                Immuta Plain English Rule Definition
+                CES Plain English Rule Definition
               </Text>
               <Badge size="xs" color={enforceMode === 'ENFORCED' ? 'teal' : 'yellow'} variant="light">
                 {enforceMode}
@@ -430,7 +448,7 @@ export default function PolicyStudioPage() {
       <Stepper active={activeStep} onStepClick={handleStepClick} color="violet" radius="md">
         <Stepper.Step label="1. Policy Archetype" description="Intent & metadata" />
         <Stepper.Step label="2. Global Scope" description="Tags & cloud platforms" />
-        <Stepper.Step label="3. Rule & Exceptions" description="Immuta Action / Circumstance" />
+        <Stepper.Step label="3. Rule & Exceptions" description="CES Action / Circumstance" />
         <Stepper.Step label="4. Live DDL Simulator" description="Snowflake, Redshift & OPA" />
       </Stepper>
 
@@ -440,7 +458,7 @@ export default function PolicyStudioPage() {
           <Card withBorder p="lg" radius="md">
             <Title order={4} mb="xs">Select Policy Archetype</Title>
             <Text size="sm" c="dimmed" mb="lg">
-              Immuta Global Policies are categorized into three core security primitives.
+              CES Global Policies are categorized into three core security primitives.
             </Text>
 
             <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
@@ -544,7 +562,7 @@ export default function PolicyStudioPage() {
           <Card withBorder p="lg" radius="md">
             <Title order={4} mb="xs">Where does this policy apply?</Title>
             <Text size="sm" c="dimmed" mb="md">
-              Immuta policies can be deployed globally across all present and future assets matching tags, or scoped to specific cloud platforms.
+              CES policies can be deployed globally across all present and future assets matching tags, or scoped to specific cloud platforms.
             </Text>
 
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg">
@@ -561,7 +579,7 @@ export default function PolicyStudioPage() {
               >
                 <Group gap="sm" mb="xs">
                   <ThemeIcon color="violet" variant="light" size="md"><IconTag size={18} /></ThemeIcon>
-                  <Text fw={700}>Global Tag-Based Trigger (Immuta Standard)</Text>
+                  <Text fw={700}>Global Tag-Based Trigger (CES Standard)</Text>
                 </Group>
                 <Text size="xs" c="dimmed">
                   Automatically applies across Snowflake, Redshift, Databricks, PostgreSQL to all tables and columns tagged with sensitive identifiers.
@@ -602,7 +620,7 @@ export default function PolicyStudioPage() {
                   clearable
                 />
                 <Text size="xs" c="dimmed">
-                  💡 When new tables or columns are discovered with these tags, Immuta automatically generates and applies the masking/row policies.
+                  💡 When new tables or columns are discovered with these tags, CES automatically generates and applies the masking/row policies.
                 </Text>
               </Stack>
             ) : (
@@ -728,7 +746,7 @@ export default function PolicyStudioPage() {
             )}
           </Card>
 
-          {/* Immuta Circumstance / Exception Engine Card */}
+          {/* CES Circumstance / Exception Engine Card */}
           <Card withBorder p="lg" radius="md">
             <Group gap="xs" mb="xs">
               <ThemeIcon color="orange" variant="light" size="md"><IconShieldLock size={18} /></ThemeIcon>
@@ -812,7 +830,7 @@ export default function PolicyStudioPage() {
               <Box>
                 <Title order={4}>Multi-Engine Live DDL & Security Simulator</Title>
                 <Text size="sm" c="dimmed">
-                  Immuta compiles your universal policy into native SQL DDL statements for Snowflake, AWS Redshift, and OPA Rego.
+                  CES compiles your universal policy into native SQL DDL statements for Snowflake, AWS Redshift, and OPA Rego.
                 </Text>
               </Box>
               <Button
@@ -835,9 +853,9 @@ export default function PolicyStudioPage() {
               <Tabs defaultValue="snowflake" color="violet">
                 <Tabs.List mb="md">
                   <Tabs.Tab value="snowflake" leftSection={<Text fw={700}>❄️ Snowflake DDL</Text>} />
-                  <Tabs.Tab value="redshift"  leftSection={<Text fw={700}>🔴 AWS Redshift DDL</Text>} />
-                  <Tabs.Tab value="opa"       leftSection={<Text fw={700}>🛡️ OPA Rego Policy</Text>} />
-                  <Tabs.Tab value="json"      leftSection={<Text fw={700}>📦 RAW JSON</Text>} />
+                  <Tabs.Tab value="redshift" leftSection={<Text fw={700}>🔴 AWS Redshift DDL</Text>} />
+                  <Tabs.Tab value="opa" leftSection={<Text fw={700}>🛡️ OPA Rego Policy</Text>} />
+                  <Tabs.Tab value="json" leftSection={<Text fw={700}>📦 RAW JSON</Text>} />
                 </Tabs.List>
 
                 <Tabs.Panel value="snowflake">

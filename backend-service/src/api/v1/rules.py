@@ -1,13 +1,22 @@
 """Rules Router."""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.db.session import get_db
-from src.models.models import PolicyRule, Policy, PolicyRuleSubject, PolicyRuleAction, PolicyRuleCondition, PolicyRuleResource
-from src.schemas.schemas import RuleCreate, RuleRead
-from src.core.auth import get_current_user, CurrentUser, require_roles
+from core.auth import CurrentUser, get_current_user, require_roles
+from db.session import get_db
+from models.models import (
+    Policy,
+    PolicyRule,
+    PolicyRuleAction,
+    PolicyRuleCondition,
+    PolicyRuleResource,
+    PolicyRuleSubject,
+    PolicyVersion,
+)
+from schemas.schemas import RuleCreate, RuleRead
 
 router = APIRouter()
 
@@ -18,16 +27,21 @@ async def list_rules(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    policy = (await db.execute(select(Policy).where(Policy.policy_id == policy_id))).scalar_one_or_none()
+    policy = (
+        await db.execute(select(Policy).where(Policy.policy_id == policy_id))
+    ).scalar_one_or_none()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found")
 
     version_id = policy.current_version_id
     if not version_id:
-        from src.models.models import PolicyVersion
-        ver_row = (await db.execute(
-            select(PolicyVersion.version_id).where(PolicyVersion.policy_id == policy_id).order_by(PolicyVersion.version_number.desc())
-        )).first()
+        ver_row = (
+            await db.execute(
+                select(PolicyVersion.version_id)
+                .where(PolicyVersion.policy_id == policy_id)
+                .order_by(PolicyVersion.version_number.desc())
+            )
+        ).first()
         if ver_row:
             version_id = ver_row[0]
 
@@ -52,19 +66,26 @@ async def list_rules(
 async def add_rule(
     policy_id: int,
     body: RuleCreate,
-    current_user: CurrentUser = Depends(require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")),
+    current_user: CurrentUser = Depends(
+        require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")
+    ),
     db: AsyncSession = Depends(get_db),
 ):
-    policy = (await db.execute(select(Policy).where(Policy.policy_id == policy_id))).scalar_one_or_none()
+    policy = (
+        await db.execute(select(Policy).where(Policy.policy_id == policy_id))
+    ).scalar_one_or_none()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found")
 
     version_id = policy.current_version_id
     if not version_id:
-        from src.models.models import PolicyVersion
-        ver_row = (await db.execute(
-            select(PolicyVersion.version_id).where(PolicyVersion.policy_id == policy_id).order_by(PolicyVersion.version_number.desc())
-        )).first()
+        ver_row = (
+            await db.execute(
+                select(PolicyVersion.version_id)
+                .where(PolicyVersion.policy_id == policy_id)
+                .order_by(PolicyVersion.version_number.desc())
+            )
+        ).first()
         if ver_row:
             version_id = ver_row[0]
 
@@ -82,10 +103,14 @@ async def add_rule(
     db.add(rule)
     await db.flush()
 
-    for s in body.subjects: db.add(PolicyRuleSubject(rule_id=rule.rule_id, **s.model_dump()))
-    for a in body.actions:  db.add(PolicyRuleAction(rule_id=rule.rule_id, **a.model_dump()))
-    for c in body.conditions: db.add(PolicyRuleCondition(rule_id=rule.rule_id, **c.model_dump()))
-    for r in body.resources:  db.add(PolicyRuleResource(rule_id=rule.rule_id, **r.model_dump()))
+    for s in body.subjects:
+        db.add(PolicyRuleSubject(rule_id=rule.rule_id, **s.model_dump()))
+    for a in body.actions:
+        db.add(PolicyRuleAction(rule_id=rule.rule_id, **a.model_dump()))
+    for c in body.conditions:
+        db.add(PolicyRuleCondition(rule_id=rule.rule_id, **c.model_dump()))
+    for r in body.resources:
+        db.add(PolicyRuleResource(rule_id=rule.rule_id, **r.model_dump()))
 
     await db.flush()
     await db.refresh(rule)
@@ -107,10 +132,14 @@ async def add_rule(
 async def delete_rule(
     policy_id: int,
     rule_id: int,
-    current_user: CurrentUser = Depends(require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")),
+    current_user: CurrentUser = Depends(
+        require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")
+    ),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (await db.execute(select(PolicyRule).where(PolicyRule.rule_id == rule_id))).scalar_one_or_none()
+    rule = (
+        await db.execute(select(PolicyRule).where(PolicyRule.rule_id == rule_id))
+    ).scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
     await db.delete(rule)

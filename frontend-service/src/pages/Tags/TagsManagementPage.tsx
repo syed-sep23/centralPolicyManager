@@ -164,7 +164,7 @@ export default function TagsManagementPage() {
       <Group justify="space-between" align="flex-start">
         <Box>
           <Group gap="xs">
-            <Badge color="violet" variant="filled" size="sm">Immuta Metadata Engine</Badge>
+            <Badge color="violet" variant="filled" size="sm">CES Metadata Engine</Badge>
             <Badge color="teal" variant="light" size="sm">Automated Sensitive Data Discovery</Badge>
           </Group>
           <Title order={2} mt={4}>Tags & Classifications Management</Title>

@@ -1,13 +1,16 @@
 import asyncio
+
 from sqlalchemy import text
-from src.db.session import AsyncSessionLocal
+
+from db.session import AsyncSessionLocal
+
 
 async def seed_tags():
     async with AsyncSessionLocal() as session:
         # Roots
         await session.execute(text("""
             INSERT INTO metadata_tags (tag_name, tag_category, full_path, source_type, description)
-            VALUES 
+            VALUES
             ('Discovered', 'SYSTEM', 'Discovered', 'AUTOMATED_DISCOVERY', 'Root category for automated sensitive data discovery identifiers'),
             ('Governance', 'GOVERNANCE', 'Governance', 'MANUAL', 'Enterprise data governance, privacy, and confidentiality levels'),
             ('Compliance', 'COMPLIANCE', 'Compliance', 'MANUAL', 'Regulatory compliance mandates (HIPAA, GDPR, PCI-DSS)')
@@ -15,16 +18,20 @@ async def seed_tags():
         """))
         await session.commit()
 
-        roots = (await session.execute(text("SELECT tag_id, tag_name FROM metadata_tags WHERE parent_tag_id IS NULL"))).fetchall()
+        roots = (
+            await session.execute(
+                text("SELECT tag_id, tag_name FROM metadata_tags WHERE parent_tag_id IS NULL")
+            )
+        ).fetchall()
         root_map = {r[1]: r[0] for r in roots}
-        disc_id = root_map.get('Discovered')
-        gov_id = root_map.get('Governance')
-        comp_id = root_map.get('Compliance')
+        disc_id = root_map.get("Discovered")
+        gov_id = root_map.get("Governance")
+        comp_id = root_map.get("Compliance")
 
         if disc_id:
             await session.execute(text(f"""
                 INSERT INTO metadata_tags (tag_name, parent_tag_id, tag_category, full_path, source_type, description)
-                VALUES 
+                VALUES
                 ('PII', {disc_id}, 'PII', 'Discovered.PII', 'AUTOMATED_DISCOVERY', 'Personally Identifiable Information identifiers'),
                 ('Financial', {disc_id}, 'FINANCIAL', 'Discovered.Financial', 'AUTOMATED_DISCOVERY', 'Financial account and compensation data identifiers'),
                 ('Location', {disc_id}, 'LOCATION', 'Discovered.Location', 'AUTOMATED_DISCOVERY', 'Geographic and address identifiers')
@@ -35,7 +42,7 @@ async def seed_tags():
         if gov_id:
             await session.execute(text(f"""
                 INSERT INTO metadata_tags (tag_name, parent_tag_id, tag_category, full_path, source_type, description)
-                VALUES 
+                VALUES
                 ('Confidentiality', {gov_id}, 'CONFIDENTIALITY', 'Governance.Confidentiality', 'MANUAL', 'Data classification tiers')
                 ON CONFLICT (full_path) DO NOTHING;
             """))
@@ -44,7 +51,7 @@ async def seed_tags():
         if comp_id:
             await session.execute(text(f"""
                 INSERT INTO metadata_tags (tag_name, parent_tag_id, tag_category, full_path, source_type, description)
-                VALUES 
+                VALUES
                 ('HIPAA', {comp_id}, 'COMPLIANCE', 'Compliance.HIPAA', 'MANUAL', 'Health Insurance Portability and Accountability Act data'),
                 ('GDPR', {comp_id}, 'COMPLIANCE', 'Compliance.GDPR', 'MANUAL', 'European General Data Protection Regulation personal data'),
                 ('PCI-DSS', {comp_id}, 'COMPLIANCE', 'Compliance.PCI-DSS', 'MANUAL', 'Payment Card Industry Data Security Standard data')
@@ -52,13 +59,15 @@ async def seed_tags():
             """))
             await session.commit()
 
-        subcats = (await session.execute(text("SELECT tag_id, full_path FROM metadata_tags"))).fetchall()
+        subcats = (
+            await session.execute(text("SELECT tag_id, full_path FROM metadata_tags"))
+        ).fetchall()
         sub_map = {s[1]: s[0] for s in subcats}
 
-        pii_id = sub_map.get('Discovered.PII')
-        fin_id = sub_map.get('Discovered.Financial')
-        loc_id = sub_map.get('Discovered.Location')
-        conf_id = sub_map.get('Governance.Confidentiality')
+        pii_id = sub_map.get("Discovered.PII")
+        fin_id = sub_map.get("Discovered.Financial")
+        loc_id = sub_map.get("Discovered.Location")
+        conf_id = sub_map.get("Governance.Confidentiality")
 
         if pii_id:
             await session.execute(text(f"""
@@ -101,7 +110,8 @@ async def seed_tags():
             """))
 
         await session.commit()
-        print("SUCCESS: Seeded Immuta Hierarchical Tags taxonomy.")
+        print("SUCCESS: Seeded CES Hierarchical Tags taxonomy.")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_tags())

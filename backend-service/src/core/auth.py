@@ -3,7 +3,9 @@ src/core/auth.py
 No authentication or authorization required (POC Mode).
 All requests bypass auth and operate with default admin privileges.
 """
+
 from __future__ import annotations
+
 from typing import Any
 
 
@@ -36,7 +38,14 @@ class CurrentUser:
     def __init__(self, user_id: int = 1, username: str = "admin", roles: list[str] | None = None):
         self.user_id = user_id
         self.username = username
-        self.roles = roles or ["ADMIN", "SUPER_ADMIN", "POLICY_AUTHOR", "DATA_GOVERNOR", "DATA_ENGINEER", "ANALYST"]
+        self.roles = roles or [
+            "ADMIN",
+            "SUPER_ADMIN",
+            "POLICY_AUTHOR",
+            "DATA_GOVERNOR",
+            "DATA_ENGINEER",
+            "ANALYST",
+        ]
 
     def has_role(self, *required_roles: str) -> bool:
         return True
@@ -55,6 +64,8 @@ async def get_current_user() -> CurrentUser:
 
 def require_roles(*roles: str):
     """Dependency factory: allows all access unconditionally."""
+
     async def _dep() -> CurrentUser:
         return DEFAULT_ADMIN_USER
+
     return _dep

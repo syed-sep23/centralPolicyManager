@@ -1,15 +1,19 @@
 """Snowflake Connector — translate, test, and apply policies as Snowflake-native constructs."""
-import time
-from typing import Optional
-from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException
+import time
+from functools import lru_cache
+from typing import Optional
+
+import structlog
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import structlog
+
+from src.compiler import SnowflakePolicyCompiler
 
 log = structlog.get_logger()
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -18,12 +22,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     ENVIRONMENT: str = "development"
 
+
 @lru_cache
-def get_settings(): return Settings()
+def get_settings():
+    return Settings()
+
+
 settings = get_settings()
 
 app = FastAPI(title="Central Entitlement Service (CES) — Snowflake Connector", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
 
 class ApplyRequest(BaseModel):
     policy_id: int
@@ -32,11 +41,13 @@ class ApplyRequest(BaseModel):
     sql_ddl: Optional[str] = None
     raw_policy: Optional[dict] = None
 
+
 class ApplyResponse(BaseModel):
     success: bool
     applied_constructs: list[str]
     skipped: bool = False
     message: str = ""
+
 
 class TestConnectionPayload(BaseModel):
     account_identifier: Optional[str] = None
@@ -46,9 +57,11 @@ class TestConnectionPayload(BaseModel):
     db_user: Optional[str] = None
     db_password: Optional[str] = None
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "snowflake-connector"}
+
 
 @app.post("/api/v1/test-connection")
 async def test_snowflake_connection(body: TestConnectionPayload):
@@ -64,10 +77,14 @@ async def test_snowflake_connection(body: TestConnectionPayload):
     role = body.role
 
     if not account or not user:
-        return {"status": "FAILED", "message": "Missing required Snowflake Account Identifier or User Name."}
+        return {
+            "status": "FAILED",
+            "message": "Missing required Snowflake Account Identifier or User Name.",
+        }
 
     try:
         import snowflake.connector
+
         conn = snowflake.connector.connect(
             account=account,
             user=user,
@@ -99,7 +116,6 @@ async def test_snowflake_connection(body: TestConnectionPayload):
             "latency_ms": latency,
         }
 
-from src.compiler import SnowflakePolicyCompiler
 
 @app.post("/api/v1/compile")
 async def compile_snowflake_policy(body: dict):
@@ -107,15 +123,19 @@ async def compile_snowflake_policy(body: dict):
     compiler = SnowflakePolicyCompiler()
     return {"platform": "SNOWFLAKE", "compiled_sql": compiler.compile(body)}
 
+
 @app.post("/api/v1/apply", response_model=ApplyResponse)
 async def apply_policy(body: ApplyRequest):
-    return ApplyResponse(success=True, applied_constructs=[], message="Policy applied via Snowflake Connector")
+    return ApplyResponse(
+        success=True, applied_constructs=[], message="Policy applied via Snowflake Connector"
+    )
+
 
 @app.post("/api/v1/revoke")
 async def revoke_policy(body: ApplyRequest):
     return {"success": True, "revoked_constructs": []}
 
+
 @app.get("/api/v1/verify/{version_id}")
 async def verify_deployment(version_id: int):
     return {"verified": True}
-

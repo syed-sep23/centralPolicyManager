@@ -1,11 +1,12 @@
 """Snowflake Native Policy Compiler — Platform-Specific Format.
 
 Generates directly-applicable Snowflake SQL scripts including:
-- Tag-Based Masking Policies (Immuta Global Scope)
+- Tag-Based Masking Policies (CES Global Scope)
 - Column-Level Masking Policies (Targeted Scope)
 - Row Access Policies (RAP)
 - Role Privilege Grants & Verification Queries
 """
+
 from datetime import datetime
 from typing import Any, Optional
 
@@ -60,21 +61,28 @@ class SnowflakePolicyCompiler:
         for idx, rule in enumerate(rules, 1):
             rule_name = rule.get("rule_name", f"Rule {idx}")
             effect = rule.get("effect", "ALLOW")
-            lines.append(f"-- ─── Rule #{idx}: {rule_name} (Effect: {effect}) ─────────────────────")
+            lines.append(
+                f"-- ─── Rule #{idx}: {rule_name} (Effect: {effect}) ─────────────────────"
+            )
 
             role_codes = []
             for s in rule.get("subjects", []):
-                code = s.get("role_code") or (s.get("subject_type") if s.get("subject_type") != "ROLE" else None)
+                code = s.get("role_code") or (
+                    s.get("subject_type") if s.get("subject_type") != "ROLE" else None
+                )
                 if code:
                     role_codes.append(f"CES_{code.upper()}")
 
             purposes = [
-                c.get("compare_value") for c in rule.get("conditions", [])
+                c.get("compare_value")
+                for c in rule.get("conditions", [])
                 if c.get("attribute_key") == "purpose" and c.get("compare_value")
             ]
 
             resources = rule.get("resources", [])
-            has_tag_resource = any(r.get("resource_scope") == "TAG" for r in resources) or len(tags) > 0
+            has_tag_resource = (
+                any(r.get("resource_scope") == "TAG" for r in resources) or len(tags) > 0
+            )
 
             exempt_roles = ["'ACCOUNTADMIN'"]
             if role_codes:
@@ -90,74 +98,135 @@ class SnowflakePolicyCompiler:
                     custom_expr = action.get("mask_expression")
                     mask_expr = get_snowflake_mask_expr(mask_type, custom_expr)
 
-                    policy_name_sf = f"GOVERNANCE_DB.POLICIES.mask_{policy_code.lower()}_{mask_col.lower()}"
+                    policy_name_sf = (
+                        f"GOVERNANCE_DB.POLICIES.mask_{policy_code.lower()}_{mask_col.lower()}"
+                    )
 
                     purpose_clause = ""
                     if purposes:
                         purpose_list = ", ".join([f"'{p}'" for p in purposes])
-                        purpose_clause = f"\n    WHEN GETVARIABLE('CES_PURPOSE') IN ({purpose_list}) THEN val"
+                        purpose_clause = (
+                            f"\n    WHEN GETVARIABLE('CES_PURPOSE') IN ({purpose_list}) THEN val"
+                        )
 
-                    lines.append(f"-- Create Native Snowflake Masking Policy")
-                    lines.append(f"CREATE OR REPLACE MASKING POLICY {policy_name_sf} AS (val VARCHAR) RETURNS VARCHAR ->")
-                    lines.append(f"  CASE")
-                    lines.append(f"    WHEN CURRENT_ROLE() IN ({roles_clause}) THEN val{purpose_clause}")
+                    lines.append("-- Create Native Snowflake Masking Policy")
+                    lines.append(
+                        f"CREATE OR REPLACE MASKING POLICY {policy_name_sf} AS (val VARCHAR) RETURNS VARCHAR ->"
+                    )
+                    lines.append("  CASE")
+                    lines.append(
+                        f"    WHEN CURRENT_ROLE() IN ({roles_clause}) THEN val{purpose_clause}"
+                    )
                     lines.append(f"    ELSE {mask_expr}")
-                    lines.append(f"  END")
+                    lines.append("  END")
                     lines.append(f"  COMMENT = 'CES Managed Masking Policy for {policy_code}';")
                     lines.append("")
 
                     if has_tag_resource and tags:
                         for tag in tags:
-                            tag_clean = tag.replace(".", "_").upper()
-                            lines.append(f"-- Bind Masking Policy directly to Snowflake Tag: {tag}")
-                            lines.append(f"CREATE TAG IF NOT EXISTS GOVERNANCE_DB.TAGS.{tag_clean} COMMENT = 'CES Tag {tag}';")
-                            lines.append(f"ALTER TAG GOVERNANCE_DB.TAGS.{tag_clean} SET MASKING POLICY {policy_name_sf};")
+                            tag_str = (
+                                tag
+                                if isinstance(tag, str)
+                                else (tag.get("tag_name") or tag.get("tag_code") or "")
+                            )
+                            if not tag_str:
+                                continue
+                            tag_clean = tag_str.replace(".", "_").upper()
+                            lines.append(
+                                f"-- Bind Masking Policy directly to Snowflake Tag: {tag_str}"
+                            )
+                            lines.append(
+                                f"CREATE TAG IF NOT EXISTS GOVERNANCE_DB.TAGS.{tag_clean} COMMENT = 'CES Tag {tag_str}';"
+                            )
+                            lines.append(
+                                f"ALTER TAG GOVERNANCE_DB.TAGS.{tag_clean} SET MASKING POLICY {policy_name_sf};"
+                            )
                     else:
-                        for res in (resources or [{"database_name": "FINANCE_DB", "schema_name": "PUBLIC", "table_name": "CUSTOMER_PROFILES"}]):
+                        for res in resources or [
+                            {
+                                "database_name": "FINANCE_DB",
+                                "schema_name": "PUBLIC",
+                                "table_name": "CUSTOMER_PROFILES",
+                            }
+                        ]:
                             db_name = (res.get("database_name") or "FINANCE_DB").upper()
                             sch_name = (res.get("schema_name") or "PUBLIC").upper()
                             tbl_name = (res.get("table_name") or "CUSTOMER_PROFILES").upper()
                             full_path = f"{db_name}.{sch_name}.{tbl_name}"
-                            lines.append(f"-- Apply Masking Policy to Table Column")
-                            lines.append(f"ALTER TABLE {full_path} MODIFY COLUMN {mask_col} SET MASKING POLICY {policy_name_sf};")
+                            lines.append("-- Apply Masking Policy to Table Column")
+                            lines.append(
+                                f"ALTER TABLE {full_path} MODIFY COLUMN {mask_col} SET MASKING POLICY {policy_name_sf};"
+                            )
 
                     for r_code in role_codes:
-                        lines.append(f"GRANT APPLY ON MASKING POLICY {policy_name_sf} TO ROLE {r_code};")
+                        lines.append(
+                            f"GRANT APPLY ON MASKING POLICY {policy_name_sf} TO ROLE {r_code};"
+                        )
 
-                    lines.append(f"-- Verification: Run in Snowflake to inspect active policy references")
-                    lines.append(f"SELECT * FROM TABLE(INFORMATION_SCHEMA.POLICY_REFERENCES(POLICY_NAME => '{policy_name_sf}'));")
+                    lines.append(
+                        "-- Verification: Run in Snowflake to inspect active policy references"
+                    )
+                    lines.append(
+                        f"SELECT * FROM TABLE(INFORMATION_SCHEMA.POLICY_REFERENCES(POLICY_NAME => '{policy_name_sf}'));"
+                    )
                     lines.append("")
 
                 elif act_type == "FILTER_ROWS":
                     filter_col = (action.get("filter_column") or "REGION").upper()
                     filter_val = action.get("filter_value") or "US_EAST"
-                    rap_name = f"GOVERNANCE_DB.POLICIES.rap_{policy_code.lower()}_{filter_col.lower()}"
+                    rap_name = (
+                        f"GOVERNANCE_DB.POLICIES.rap_{policy_code.lower()}_{filter_col.lower()}"
+                    )
 
-                    lines.append(f"-- Create Native Snowflake Row Access Policy (RAP)")
-                    lines.append(f"CREATE OR REPLACE ROW ACCESS POLICY {rap_name} AS (col_val VARCHAR) RETURNS BOOLEAN ->")
-                    lines.append(f"  CURRENT_ROLE() IN ('ACCOUNTADMIN') OR (CURRENT_ROLE() IN ({roles_clause}) AND col_val = '{filter_val}');")
+                    lines.append("-- Create Native Snowflake Row Access Policy (RAP)")
+                    lines.append(
+                        f"CREATE OR REPLACE ROW ACCESS POLICY {rap_name} AS (col_val VARCHAR) RETURNS BOOLEAN ->"
+                    )
+                    lines.append(
+                        f"  CURRENT_ROLE() IN ('ACCOUNTADMIN') OR (CURRENT_ROLE() IN ({roles_clause}) AND col_val = '{filter_val}');"
+                    )
                     lines.append("")
 
-                    for res in (resources or [{"database_name": "FINANCE_DB", "schema_name": "PUBLIC", "table_name": "CUSTOMER_PROFILES"}]):
+                    for res in resources or [
+                        {
+                            "database_name": "FINANCE_DB",
+                            "schema_name": "PUBLIC",
+                            "table_name": "CUSTOMER_PROFILES",
+                        }
+                    ]:
                         db_name = (res.get("database_name") or "FINANCE_DB").upper()
                         sch_name = (res.get("schema_name") or "PUBLIC").upper()
                         tbl_name = (res.get("table_name") or "CUSTOMER_PROFILES").upper()
                         full_path = f"{db_name}.{sch_name}.{tbl_name}"
-                        lines.append(f"-- Apply Row Access Policy to Table")
-                        lines.append(f"ALTER TABLE {full_path} ADD ROW ACCESS POLICY {rap_name} ON ({filter_col});")
+                        lines.append("-- Apply Row Access Policy to Table")
+                        lines.append(
+                            f"ALTER TABLE {full_path} ADD ROW ACCESS POLICY {rap_name} ON ({filter_col});"
+                        )
 
                     lines.append("")
 
                 elif act_type in ("GRANT_SELECT", "GRANT_INSERT", "GRANT_UPDATE"):
-                    sql_verb = "SELECT" if act_type == "GRANT_SELECT" else "INSERT" if act_type == "GRANT_INSERT" else "UPDATE"
-                    for res in (resources or [{"database_name": "FINANCE_DB", "schema_name": "PUBLIC", "table_name": "CUSTOMER_PROFILES"}]):
+                    sql_verb = (
+                        "SELECT"
+                        if act_type == "GRANT_SELECT"
+                        else "INSERT" if act_type == "GRANT_INSERT" else "UPDATE"
+                    )
+                    for res in resources or [
+                        {
+                            "database_name": "FINANCE_DB",
+                            "schema_name": "PUBLIC",
+                            "table_name": "CUSTOMER_PROFILES",
+                        }
+                    ]:
                         db_name = (res.get("database_name") or "FINANCE_DB").upper()
                         sch_name = (res.get("schema_name") or "PUBLIC").upper()
                         tbl_name = (res.get("table_name") or "CUSTOMER_PROFILES").upper()
                         full_path = f"{db_name}.{sch_name}.{tbl_name}"
                         for r_code in role_codes:
                             lines.append(f"GRANT USAGE ON DATABASE {db_name} TO ROLE {r_code};")
-                            lines.append(f"GRANT USAGE ON SCHEMA {db_name}.{sch_name} TO ROLE {r_code};")
+                            lines.append(
+                                f"GRANT USAGE ON SCHEMA {db_name}.{sch_name} TO ROLE {r_code};"
+                            )
                             lines.append(f"GRANT {sql_verb} ON TABLE {full_path} TO ROLE {r_code};")
                     lines.append("")
 

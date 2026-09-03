@@ -3,7 +3,7 @@ package policy.rbac
 import rego.v1
 
 # ==============================================================================
-# Immuta-Grade RBAC & ABAC Access Decision Engine
+# CES-Grade RBAC & ABAC Access Decision Engine
 # Evaluates user identities, inherited group memberships, and multi-attribute
 # conditions with Boolean grouping (AND within condition group, OR across groups).
 # ==============================================================================

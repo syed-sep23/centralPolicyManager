@@ -1,29 +1,41 @@
 """Core Backend Service — Single FastAPI Application Entry Point."""
+
+import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from src.core.config import settings
-from src.core.logging import configure_logging
-from src.db.session import engine, Base
-from src.api.v1 import (
-    auth, policies, versions, rules, conditions,
-    validation, metadata, user_rbac, deployments,
-    purposes, requests, scim,
-)
-from src.core.auth import configure_auth
-
-import asyncio
 from temporalio.client import Client
 from temporalio.worker import Worker
-from src.workflows.deployment_workflow import (
+
+from api.v1 import (
+    auth,
+    conditions,
+    deployments,
+    metadata,
+    policies,
+    purposes,
+    requests,
+    rules,
+    scim,
+    user_rbac,
+    validation,
+    versions,
+)
+from core.auth import configure_auth
+from core.config import settings
+from core.logging import configure_logging
+from db.session import Base, engine
+from workflows.deployment_workflow import (
     PolicyDeploymentWorkflow,
     compile_policy_activity,
     deploy_to_platform_activity,
 )
-from src.workflows.metadata_sync_workflow import MetadataSyncCronWorkflow, sync_platform_metadata_activity
+from workflows.metadata_sync_workflow import (
+    MetadataSyncCronWorkflow,
+    sync_platform_metadata_activity,
+)
 
 configure_logging()
 log = structlog.get_logger()
@@ -38,7 +50,11 @@ async def run_temporal_worker():
             client,
             task_queue=settings.TEMPORAL_TASK_QUEUE,
             workflows=[PolicyDeploymentWorkflow, MetadataSyncCronWorkflow],
-            activities=[compile_policy_activity, deploy_to_platform_activity, sync_platform_metadata_activity],
+            activities=[
+                compile_policy_activity,
+                deploy_to_platform_activity,
+                sync_platform_metadata_activity,
+            ],
         )
         log.info("temporal_worker.started", task_queue=settings.TEMPORAL_TASK_QUEUE)
         await worker.run()
@@ -57,7 +73,7 @@ async def lifespan(app: FastAPI):
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     worker_task = asyncio.create_task(run_temporal_worker())
     yield
     worker_task.cancel()
@@ -84,17 +100,17 @@ def create_app() -> FastAPI:
     )
 
     # API Routers
-    app.include_router(auth.router,        prefix="/api/v1/auth",        tags=["Auth"])
-    app.include_router(purposes.router,    prefix="/api/v1/purposes",    tags=["Purposes (PBAC)"])
-    app.include_router(requests.router,    prefix="/api/v1/requests",    tags=["Entitlement Requests"])
-    app.include_router(scim.router,        prefix="/api/v1/scim/v2",     tags=["SCIM 2.0 Identity Sync"])
-    app.include_router(policies.router,    prefix="/api/v1/policies",    tags=["Policies"])
-    app.include_router(versions.router,    prefix="/api/v1/policies",    tags=["Versions"])
-    app.include_router(rules.router,       prefix="/api/v1/policies",    tags=["Rules"])
-    app.include_router(conditions.router,  prefix="/api/v1/policies",    tags=["Conditions"])
-    app.include_router(validation.router,  prefix="/api/v1",             tags=["Validation"])
-    app.include_router(metadata.router,    prefix="/api/v1/metadata",    tags=["Metadata"])
-    app.include_router(user_rbac.router,   prefix="/api/v1",             tags=["Users & Roles"])
+    app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+    app.include_router(purposes.router, prefix="/api/v1/purposes", tags=["Purposes (PBAC)"])
+    app.include_router(requests.router, prefix="/api/v1/requests", tags=["Entitlement Requests"])
+    app.include_router(scim.router, prefix="/api/v1/scim/v2", tags=["SCIM 2.0 Identity Sync"])
+    app.include_router(policies.router, prefix="/api/v1/policies", tags=["Policies"])
+    app.include_router(versions.router, prefix="/api/v1/policies", tags=["Versions"])
+    app.include_router(rules.router, prefix="/api/v1/policies", tags=["Rules"])
+    app.include_router(conditions.router, prefix="/api/v1/policies", tags=["Conditions"])
+    app.include_router(validation.router, prefix="/api/v1", tags=["Validation"])
+    app.include_router(metadata.router, prefix="/api/v1/metadata", tags=["Metadata"])
+    app.include_router(user_rbac.router, prefix="/api/v1", tags=["Users & Roles"])
     app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["Deployments"])
 
     @app.get("/health", tags=["Health"])

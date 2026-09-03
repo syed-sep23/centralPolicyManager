@@ -11,7 +11,20 @@ CREATE TABLE IF NOT EXISTS metadata_platforms (
     platform_name       VARCHAR(100) NOT NULL,
     platform_version    VARCHAR(50),
     connection_alias    VARCHAR(100),
+    account_identifier  VARCHAR(255),
+    warehouse           VARCHAR(100),
+    default_database    VARCHAR(100),
+    role_name           VARCHAR(100),
+    host                VARCHAR(255),
+    port                INTEGER,
+    http_path           VARCHAR(255),
+    catalog_name        VARCHAR(100),
+    db_user             VARCHAR(100),
+    db_password         VARCHAR(255),
     is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    connection_status   VARCHAR(30) NOT NULL DEFAULT 'UNTESTED'
+                        CHECK (connection_status IN ('CONNECTED', 'FAILED', 'UNTESTED')),
+    last_tested_at      TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -86,7 +99,7 @@ CREATE TABLE IF NOT EXISTS metadata_tags (
     parent_tag_id       INTEGER REFERENCES metadata_tags(tag_id) ON DELETE CASCADE,
     tag_category        VARCHAR(100),
     source_type         VARCHAR(50) NOT NULL DEFAULT 'MANUAL'
-                        CHECK (source_type IN ('MANUAL','DISCOVERED','EXTERNAL_CATALOG','SYSTEM')),
+                        CHECK (source_type IN ('MANUAL','DISCOVERED','AUTOMATED_DISCOVERY','EXTERNAL_CATALOG','SYSTEM')),
     description         TEXT,
     allowed_values      TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -135,3 +148,24 @@ CREATE INDEX IF NOT EXISTS idx_meta_table_schema    ON metadata_tables(schema_id
 CREATE INDEX IF NOT EXISTS idx_meta_col_table       ON metadata_columns(table_id);
 CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_col  ON metadata_tag_assignments(column_id);
 CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_tbl  ON metadata_tag_assignments(table_id);
+
+-- ─── Platform Drivers Registry (Extensible Multi-Cloud Drivers) ───────────────
+CREATE TABLE IF NOT EXISTS metadata_platform_drivers (
+    driver_code         VARCHAR(50)  PRIMARY KEY,
+    driver_name         VARCHAR(100) NOT NULL,
+    description         TEXT,
+    fields              JSONB NOT NULL DEFAULT '[]'::jsonb,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─── Automated Tag Discovery Identifiers & Rules ──────────────────────────────
+CREATE TABLE IF NOT EXISTS metadata_tag_rules (
+    rule_id             SERIAL PRIMARY KEY,
+    tag_path            VARCHAR(255) NOT NULL UNIQUE,
+    category            VARCHAR(50)  NOT NULL,
+    regex_pattern       VARCHAR(500) NOT NULL,
+    description         TEXT,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -54,29 +54,13 @@ export default function PlatformsPage() {
   const [dbPassword, setDbPassword] = useState('')
 
   // Test Connection status
-  const [testResult, setTestResult] = useState<{ status: string; message: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ status: string; message: string; latency_ms?: number } | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [testingPlatformId, setTestingPlatformId] = useState<number | null>(null)
 
   // Queries
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
   const drivers   = useQuery({ queryKey: ['drivers'], queryFn: () => metadataApi.drivers() })
-
-  const createMutation = useMutation({
-    mutationFn: (data: any) => metadataApi.createPlatform(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['platforms'] })
-      notifications.show({ message: 'Platform onboarded successfully!', color: 'teal', icon: <IconCheck /> })
-      closeModal()
-    },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => metadataApi.updatePlatform(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['platforms'] })
-      notifications.show({ message: 'Platform connection updated!', color: 'teal', icon: <IconCheck /> })
-      closeModal()
-    },
-  })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => metadataApi.deletePlatform(id),
@@ -87,17 +71,129 @@ export default function PlatformsPage() {
   })
 
   const testMutation = useMutation({
-    mutationFn: (data: any) => metadataApi.testConnection(data),
-    onSuccess: (res: any) => {
+    mutationFn: (data: any) => metadataApi.testConnectionDirect(data),
+    onSuccess: async (res: any) => {
       const data = res.data ?? res
       setTestResult(data)
-      if (data.status === 'SUCCESS') {
-        notifications.show({ message: data.message, color: 'teal', icon: <IconCheck /> })
+      const isSuccess = data.status === 'SUCCESS'
+      const connStatus = isSuccess ? 'CONNECTED' : 'FAILED'
+      const testedAt = new Date().toISOString()
+
+      // If testing an existing platform in the modal, persist the status and date to the database immediately!
+      if (editingPlatformId) {
+        try {
+          await metadataApi.updatePlatform(editingPlatformId, {
+            connection_status: connStatus,
+            last_tested_at: testedAt,
+          })
+          await queryClient.invalidateQueries({ queryKey: ['platforms'] })
+        } catch (err) {
+          console.error('Failed to persist connection status to database:', err)
+        }
+      }
+
+      if (isSuccess) {
+        notifications.show({
+          title: 'Direct Connector Connected ✅',
+          message: data.message + (data.latency_ms ? ` (${data.latency_ms}ms latency)` : ''),
+          color: 'teal',
+          icon: <IconCheck />,
+        })
       } else {
-        notifications.show({ message: data.message, color: 'red', icon: <IconX /> })
+        notifications.show({
+          title: 'Direct Connector Failed ❌',
+          message: data.message || 'Connection test failed',
+          color: 'red',
+          icon: <IconX />,
+        })
       }
     },
+    onError: async (err: any) => {
+      const msg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Direct connection test failed'
+      setTestResult({ status: 'FAILED', message: msg })
+
+      if (editingPlatformId) {
+        try {
+          await metadataApi.updatePlatform(editingPlatformId, {
+            connection_status: 'FAILED',
+            last_tested_at: new Date().toISOString(),
+          })
+          await queryClient.invalidateQueries({ queryKey: ['platforms'] })
+        } catch (e) {
+          console.error('Failed to persist failure status to DB:', e)
+        }
+      }
+
+      notifications.show({
+        title: 'Connection Error',
+        message: msg,
+        color: 'red',
+        icon: <IconX />,
+      })
+    },
   })
+
+  const handleQuickTest = async (p: any) => {
+    setTestingPlatformId(p.platform_id)
+    notifications.show({
+      id: `quick-test-${p.platform_id}`,
+      loading: true,
+      title: 'Testing Direct Connection',
+      message: `Connecting directly to ${p.platform_name} (${p.platform_code})...`,
+      autoClose: false,
+    })
+
+    const testData = {
+      platform_type: p.platform_code,
+      platform_code: p.platform_code,
+      account_identifier: p.account_identifier,
+      warehouse: p.warehouse,
+      default_database: p.default_database,
+      role: p.role_name,
+      host: p.host,
+      port: p.port,
+      db_user: p.db_user,
+      db_password: p.db_password,
+    }
+
+    let testRes: any
+    let isSuccess = false
+    try {
+      testRes = await metadataApi.testConnectionDirect(testData)
+      isSuccess = testRes?.status === 'SUCCESS'
+    } catch (err: any) {
+      isSuccess = false
+      testRes = {
+        status: 'FAILED',
+        message: err.response?.data?.message || err.response?.data?.detail || err.message || 'Direct connection test failed',
+      }
+    }
+
+    const testedAt = new Date().toISOString()
+    const connStatus = isSuccess ? 'CONNECTED' : 'FAILED'
+
+    try {
+      await metadataApi.updatePlatform(p.platform_id, {
+        connection_status: connStatus,
+        last_tested_at: testedAt,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['platforms'] })
+    } catch (updateErr) {
+      console.error('Failed to update platform status in database:', updateErr)
+    }
+
+    notifications.update({
+      id: `quick-test-${p.platform_id}`,
+      title: isSuccess ? `${p.platform_name} Connected ✅` : `${p.platform_name} Disconnected ❌`,
+      message: isSuccess
+        ? `Direct connection verified (${testRes.latency_ms || 0}ms latency).`
+        : testRes.message || 'Connection attempt failed.',
+      color: isSuccess ? 'teal' : 'red',
+      autoClose: 7000,
+    })
+
+    setTestingPlatformId(null)
+  }
 
   const resetForm = () => {
     setEditingPlatformId(null)
@@ -135,50 +231,142 @@ export default function PlatformsPage() {
   const handleEdit = (p: any) => {
     closeModal()
     setEditingPlatformId(p.platform_id)
-    setPlatformCode(p.platform_code)
-    setPlatformName(p.platform_name)
+    setPlatformCode(p.platform_code || '')
+    setPlatformName(p.platform_name || '')
     setConnectionAlias(p.connection_alias || '')
-    const driver = PLATFORM_OPTIONS.find((o) => p.platform_code.includes(o.value))?.value || 'CUSTOM_JDBC'
+    const driver = PLATFORM_OPTIONS.find((o) => (p.platform_code || '').toUpperCase().includes(o.value))?.value || 'CUSTOM_JDBC'
     setPlatformType(driver)
+
+    setAccountIdentifier(p.account_identifier || (driver === 'SNOWFLAKE' ? 'demo.us-east-1' : ''))
+    setWarehouse(p.warehouse || (driver === 'SNOWFLAKE' ? 'CES_WH' : ''))
+    setDefaultDatabase(p.default_database || (driver === 'SNOWFLAKE' ? 'FINANCE_DB' : driver === 'REDSHIFT' ? 'acme_dw' : ''))
+    setRole(p.role_name || (driver === 'SNOWFLAKE' ? 'SYSADMIN' : ''))
+
+    setHost(p.host || (driver === 'REDSHIFT' ? 'localhost' : ''))
+    setPort(p.port || (driver === 'REDSHIFT' ? 5439 : ''))
+    setHttpPath(p.http_path || '')
+    setCatalogName(p.catalog_name || '')
+
+    setDbUser(p.db_user || (driver === 'SNOWFLAKE' || driver === 'REDSHIFT' ? 'ces_svc' : ''))
+    setDbPassword(p.db_password || '')
+
+    setTestResult(null)
     setModalOpened(true)
   }
 
   const handleTestConnection = () => {
     testMutation.mutate({
+      platform_type: platformType,
       platform_code: platformCode,
       account_identifier: accountIdentifier,
       host,
       port: port ? Number(port) : undefined,
       default_database: defaultDatabase,
       warehouse,
+      role,
       db_user: dbUser,
       db_password: dbPassword,
     })
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!platformCode || !platformName) {
       notifications.show({ message: 'Please provide Platform Code and Name', color: 'red' })
       return
     }
 
-    const payload = {
-      platform_code: platformCode,
-      platform_name: platformName,
-      connection_alias: connectionAlias || `${platformCode.toLowerCase()}_conn`,
-      account_identifier: accountIdentifier,
-      host,
-      port: port ? Number(port) : undefined,
-      default_database: defaultDatabase,
-      warehouse,
-      db_user: dbUser,
-      db_password: dbPassword,
-    }
+    setIsSaving(true)
+    try {
+      const payload = {
+        platform_code: platformCode,
+        platform_name: platformName,
+        connection_alias: connectionAlias || `${platformCode.toLowerCase()}_conn`,
+        account_identifier: accountIdentifier,
+        host,
+        port: port ? Number(port) : undefined,
+        default_database: defaultDatabase,
+        warehouse,
+        role,
+        http_path: httpPath,
+        catalog_name: catalogName,
+        db_user: dbUser,
+        db_password: dbPassword,
+      }
 
-    if (editingPlatformId) {
-      updateMutation.mutate({ id: editingPlatformId, data: payload })
-    } else {
-      createMutation.mutate(payload)
+      let savedPlatformId = editingPlatformId
+      if (editingPlatformId) {
+        const updateRes: any = await metadataApi.updatePlatform(editingPlatformId, payload)
+        savedPlatformId = updateRes.data?.platform_id || editingPlatformId
+      } else {
+        const createRes: any = await metadataApi.createPlatform(payload)
+        savedPlatformId = createRes.data?.platform_id
+      }
+
+      // Validate credentials directly against respective connector
+      notifications.show({
+        id: 'validating-conn',
+        loading: true,
+        title: 'Validating Connection',
+        message: `Testing credentials directly against ${platformType} connector...`,
+        autoClose: false,
+      })
+
+      const testData = {
+        platform_type: platformType,
+        platform_code: platformCode,
+        account_identifier: accountIdentifier,
+        host,
+        port: port ? Number(port) : undefined,
+        default_database: defaultDatabase,
+        warehouse,
+        role,
+        db_user: dbUser,
+        db_password: dbPassword,
+      }
+
+      let testRes: any
+      let isSuccess = false
+      try {
+        testRes = await metadataApi.testConnectionDirect(testData)
+        isSuccess = testRes?.status === 'SUCCESS'
+      } catch (err: any) {
+        isSuccess = false
+        testRes = {
+          status: 'FAILED',
+          message: err.response?.data?.message || err.response?.data?.detail || err.message || 'Direct connector validation failed',
+        }
+      }
+
+      const testedAt = new Date().toISOString()
+      const connectionStatus = isSuccess ? 'CONNECTED' : 'FAILED'
+
+      if (savedPlatformId) {
+        await metadataApi.updatePlatform(savedPlatformId, {
+          connection_status: connectionStatus,
+          last_tested_at: testedAt,
+        })
+      }
+
+      notifications.update({
+        id: 'validating-conn',
+        title: isSuccess ? 'Platform Connected ✅' : 'Credentials Saved (Connection Failed) ⚠️',
+        message: isSuccess
+          ? `Credentials verified with ${platformType} (${testRes.latency_ms || 0}ms latency).`
+          : `Credentials saved to catalog. Test status: ${testRes.message || 'Connection failed'}`,
+        color: isSuccess ? 'teal' : 'orange',
+        autoClose: 7000,
+      })
+
+      await queryClient.invalidateQueries({ queryKey: ['platforms'] })
+      closeModal()
+    } catch (err: any) {
+      notifications.show({
+        title: 'Save Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to save platform credentials',
+        color: 'red',
+      })
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -261,18 +449,41 @@ export default function PlatformsPage() {
                     </Badge>
                   </Box>
                 </Group>
-                <Badge color="teal" variant="light" leftSection={<IconCheck size={12} />}>
-                  Connected
-                </Badge>
+                {p.connection_status === 'CONNECTED' ? (
+                  <Badge color="teal" variant="light" leftSection={<IconCheck size={12} />}>
+                    Connected
+                  </Badge>
+                ) : p.connection_status === 'FAILED' ? (
+                  <Badge color="red" variant="light" leftSection={<IconX size={12} />}>
+                    Disconnected
+                  </Badge>
+                ) : (
+                  <Badge color="gray" variant="outline">
+                    Untested
+                  </Badge>
+                )}
               </Group>
 
-              <Text size="xs" c="dimmed" mb="md">
+              <Text size="xs" c="dimmed">
                 Alias: <Text span ff="monospace" fw={600}>{p.connection_alias || 'default_conn'}</Text> • Native Driver Active
+              </Text>
+              <Text size="xs" c="dimmed" mb="md">
+                Last Tested:{' '}
+                <Text span fw={500} c={p.last_tested_at ? undefined : 'dimmed'}>
+                  {p.last_tested_at ? new Date(p.last_tested_at).toLocaleString() : 'Never tested'}
+                </Text>
               </Text>
 
               <Group justify="space-between" mt="md">
-                <Button size="xs" variant="light" color="indigo" leftSection={<IconRefresh size={14} />}>
-                  Sync Catalog
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="indigo"
+                  leftSection={testingPlatformId === p.platform_id ? <Loader size={12} /> : <IconPlugConnected size={14} />}
+                  loading={testingPlatformId === p.platform_id}
+                  onClick={() => handleQuickTest(p)}
+                >
+                  Test Connection
                 </Button>
                 <Group gap={6}>
                   <Tooltip label="Edit Connection Credentials">
@@ -420,11 +631,11 @@ export default function PlatformsPage() {
               <Button variant="default" onClick={closeModal}>Cancel</Button>
               <Button
                 color="indigo"
-                loading={createMutation.isPending || updateMutation.isPending}
+                loading={isSaving}
                 onClick={handleSave}
-                disabled={!isCanSave || createMutation.isPending || updateMutation.isPending}
+                disabled={!isCanSave || isSaving}
               >
-                {editingPlatformId ? 'Update Credentials' : 'Save & Onboard Platform'}
+                {editingPlatformId ? 'Update & Validate Credentials' : 'Save & Onboard Platform'}
               </Button>
             </Group>
           </Group>

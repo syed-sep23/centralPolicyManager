@@ -7,7 +7,7 @@ import data.policy.rbac
 import data.policy.rls
 
 # ==============================================================================
-# Immuta-Grade Unified Governance Decision Engine
+# CES-Grade Unified Governance Decision Engine
 # Evaluates identity entitlements, dynamic ABAC attributes, contextual PBAC purposes,
 # data masking, and row-level security into a single, high-performance decision.
 # ==============================================================================

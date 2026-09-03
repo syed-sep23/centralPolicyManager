@@ -1,6 +1,8 @@
 """Temporal Workflow for Periodic Metadata Syncing."""
+
 from datetime import timedelta
-from temporalio import workflow, activity
+
+from temporalio import activity, workflow
 
 with workflow.unsafe.imports_passed_through():
     import structlog
@@ -13,7 +15,12 @@ async def sync_platform_metadata_activity(platform_code: str) -> dict:
     """Simulates scanning platform schemas and updating postgres metadata tables."""
     log.info("metadata_sync.running", platform=platform_code)
     # In production, connects to platform information_schema and updates metadata_tables/metadata_columns
-    return {"platform": platform_code, "synced_tables": 10, "synced_columns": 50, "status": "SUCCESS"}
+    return {
+        "platform": platform_code,
+        "synced_tables": 10,
+        "synced_columns": 50,
+        "status": "SUCCESS",
+    }
 
 
 @workflow.defn

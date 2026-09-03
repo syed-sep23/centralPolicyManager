@@ -1,17 +1,23 @@
 """Auth router — JWT login, register, refresh, /me."""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
-from src.db.session import get_db
-from src.models.models import User
-from src.schemas.schemas import TokenResponse, UserCreate, UserRead
-from src.core.auth import (
-    create_access_token, create_refresh_token, hash_password,
-    verify_password, decode_token, get_current_user, CurrentUser,
+from core.auth import (
+    CurrentUser,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_current_user,
+    hash_password,
+    verify_password,
 )
+from core.config import settings
+from db.session import get_db
+from models.models import User
+from schemas.schemas import TokenResponse, UserCreate, UserRead
 
 router = APIRouter()
 
@@ -75,7 +81,9 @@ async def me(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user = (await db.execute(select(User).where(User.user_id == current_user.user_id))).scalar_one_or_none()
+    user = (
+        await db.execute(select(User).where(User.user_id == current_user.user_id))
+    ).scalar_one_or_none()
     if not user:
         user = (await db.execute(select(User).where(User.username == "admin"))).scalar_one_or_none()
     if not user:

@@ -4,6 +4,8 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
+ENV PYTHONPATH="/app/src:/app"
+
 COPY backend-service/pyproject.toml .
 COPY backend-service/src/ ./src/
 COPY backend-service/rego/ ./rego/

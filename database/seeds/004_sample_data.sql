@@ -150,9 +150,9 @@ INSERT INTO data_access_requests (request_id, request_number, requestor_id, doma
 ON CONFLICT (request_id) DO NOTHING;
 
 -- ─── Platforms ────────────────────────────────────────────────────────────────
-INSERT INTO metadata_platforms (platform_id, platform_code, platform_name, platform_version, connection_alias) VALUES
-(1, 'SNOWFLAKE', 'Snowflake Enterprise Data Cloud', '7.42', 'SNOWFLAKE_PROD'),
-(2, 'REDSHIFT',  'Amazon Redshift Cluster',         '1.0.60', 'REDSHIFT_ANALYTICS')
+INSERT INTO metadata_platforms (platform_id, platform_code, platform_name, platform_version, connection_alias, account_identifier, warehouse, default_database, role_name, host, port, db_user, db_password) VALUES
+(1, 'SNOWFLAKE', 'Snowflake Enterprise Data Cloud', '7.42', 'SNOWFLAKE_PROD', 'demo.us-east-1', 'CES_WH', 'FINANCE_DB', 'SYSADMIN', NULL, NULL, 'ces_svc', 'demo_password_2026'),
+(2, 'REDSHIFT',  'Amazon Redshift Cluster',         '1.0.60', 'REDSHIFT_ANALYTICS', NULL, NULL, 'acme_dw', NULL, 'localhost', 5439, 'ces_svc', 'demo_password_2026')
 ON CONFLICT (platform_id) DO NOTHING;
 
 -- ─── Databases ────────────────────────────────────────────────────────────────
@@ -294,35 +294,35 @@ ON CONFLICT (full_path) DO NOTHING;
 
 -- 2. Level 2 Branches
 INSERT INTO metadata_tags (tag_id, platform_id, tag_name, full_path, parent_tag_id, tag_category, source_type, description) VALUES
-(4, NULL, 'PII',             'Discovered.PII',           1, 'PII',             'AUTOMATED_DISCOVERY', 'Personally Identifiable Information branch'),
-(5, NULL, 'Financial',       'Discovered.Financial',     1, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Financial account and compensation data identifiers'),
-(6, NULL, 'Location',        'Discovered.Location',      1, 'LOCATION',        'AUTOMATED_DISCOVERY', 'Geographic and address identifiers'),
-(7, NULL, 'Confidentiality', 'Governance.Confidentiality', 2, 'CONFIDENTIALITY', 'MANUAL',              'Data classification tiers'),
-(8, NULL, 'GDPR',            'Compliance.GDPR',          3, 'COMPLIANCE',      'MANUAL',              'European General Data Protection Regulation personal data'),
-(9, NULL, 'HIPAA',           'Compliance.HIPAA',         3, 'COMPLIANCE',      'MANUAL',              'Health Insurance Portability and Accountability Act data'),
-(10,NULL, 'PCI-DSS',         'Compliance.PCI-DSS',       3, 'COMPLIANCE',      'MANUAL',              'Payment Card Industry Data Security Standard data'),
-(11,NULL, 'SOX',             'Compliance.SOX',           3, 'COMPLIANCE',      'MANUAL',              'Sarbanes-Oxley Act financial governance data')
+(4, NULL, 'PII',             'Discovered.PII',           1, 'PII',             'DISCOVERED', 'Personally Identifiable Information branch'),
+(5, NULL, 'Financial',       'Discovered.Financial',     1, 'FINANCIAL',       'DISCOVERED', 'Financial account and compensation data identifiers'),
+(6, NULL, 'Location',        'Discovered.Location',      1, 'LOCATION',        'DISCOVERED', 'Geographic and address identifiers'),
+(7, NULL, 'Confidentiality', 'Governance.Confidentiality', 2, 'CONFIDENTIALITY', 'MANUAL',     'Data classification tiers'),
+(8, NULL, 'GDPR',            'Compliance.GDPR',          3, 'COMPLIANCE',      'MANUAL',     'European General Data Protection Regulation personal data'),
+(9, NULL, 'HIPAA',           'Compliance.HIPAA',         3, 'COMPLIANCE',      'MANUAL',     'Health Insurance Portability and Accountability Act data'),
+(10,NULL, 'PCI-DSS',         'Compliance.PCI-DSS',       3, 'COMPLIANCE',      'MANUAL',     'Payment Card Industry Data Security Standard data'),
+(11,NULL, 'SOX',             'Compliance.SOX',           3, 'COMPLIANCE',      'MANUAL',     'Sarbanes-Oxley Act financial governance data')
 ON CONFLICT (full_path) DO NOTHING;
 
 -- 3. Level 3 Leaf Tags
 INSERT INTO metadata_tags (tag_id, platform_id, tag_name, full_path, parent_tag_id, tag_category, source_type, description) VALUES
-(12, NULL, 'Email',          'Discovered.PII.Email',                 4, 'PII',             'AUTOMATED_DISCOVERY', 'Email address columns'),
-(13, NULL, 'Phone',          'Discovered.PII.Phone',                 4, 'PII',             'AUTOMATED_DISCOVERY', 'Telephone or mobile contact numbers'),
-(14, NULL, 'SSN',            'Discovered.PII.SSN',                   4, 'PII',             'AUTOMATED_DISCOVERY', 'Social Security or National Identification numbers'),
-(15, NULL, 'Name',           'Discovered.PII.Name',                  4, 'PII',             'AUTOMATED_DISCOVERY', 'Customer, employee, or individual personal names'),
-(16, NULL, 'DateOfBirth',    'Discovered.PII.DateOfBirth',           4, 'PII',             'AUTOMATED_DISCOVERY', 'Individual birth dates'),
-(17, NULL, 'BankAccount',    'Discovered.Financial.BankAccount',     5, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Bank account, IBAN, or routing numbers'),
-(18, NULL, 'RoutingNumber',  'Discovered.Financial.RoutingNumber',   5, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Bank routing transit numbers'),
-(19, NULL, 'Salary',         'Discovered.Financial.Salary',          5, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Employee salary, wage, or compensation figures'),
-(20, NULL, 'Income',         'Discovered.Financial.Income',          5, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Annual income or gross earnings amounts'),
-(21, NULL, 'CreditCard',     'Discovered.Financial.CreditCard',      5, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Credit or debit card payment PANs'),
-(22, NULL, 'CreditScore',    'Discovered.Financial.CreditScore',     5, 'FINANCIAL',       'AUTOMATED_DISCOVERY', 'Customer credit ratings or risk scores'),
-(23, NULL, 'Address',        'Discovered.Location.Address',          6, 'LOCATION',        'AUTOMATED_DISCOVERY', 'Street, postal address, or residence'),
-(24, NULL, 'City',           'Discovered.Location.City',             6, 'LOCATION',        'AUTOMATED_DISCOVERY', 'Municipality, city, or town name'),
-(25, NULL, 'Public',         'Governance.Confidentiality.Public',    7, 'CONFIDENTIALITY', 'MANUAL',              'Publicly accessible unclassified data'),
-(26, NULL, 'Internal',       'Governance.Confidentiality.Internal',  7, 'CONFIDENTIALITY', 'MANUAL',              'General internal business data'),
-(27, NULL, 'Confidential',   'Governance.Confidentiality.Confidential', 7, 'CONFIDENTIALITY', 'MANUAL',          'Confidential enterprise business data'),
-(28, NULL, 'Restricted',     'Governance.Confidentiality.Restricted',   7, 'CONFIDENTIALITY', 'MANUAL',          'Highest protection tier: restricted access only')
+(12, NULL, 'Email',          'Discovered.PII.Email',                 4, 'PII',             'DISCOVERED', 'Email address columns'),
+(13, NULL, 'Phone',          'Discovered.PII.Phone',                 4, 'PII',             'DISCOVERED', 'Telephone or mobile contact numbers'),
+(14, NULL, 'SSN',            'Discovered.PII.SSN',                   4, 'PII',             'DISCOVERED', 'Social Security or National Identification numbers'),
+(15, NULL, 'Name',           'Discovered.PII.Name',                  4, 'PII',             'DISCOVERED', 'Customer, employee, or individual personal names'),
+(16, NULL, 'DateOfBirth',    'Discovered.PII.DateOfBirth',           4, 'PII',             'DISCOVERED', 'Individual birth dates'),
+(17, NULL, 'BankAccount',    'Discovered.Financial.BankAccount',     5, 'FINANCIAL',       'DISCOVERED', 'Bank account, IBAN, or routing numbers'),
+(18, NULL, 'RoutingNumber',  'Discovered.Financial.RoutingNumber',   5, 'FINANCIAL',       'DISCOVERED', 'Bank routing transit numbers'),
+(19, NULL, 'Salary',         'Discovered.Financial.Salary',          5, 'FINANCIAL',       'DISCOVERED', 'Employee salary, wage, or compensation figures'),
+(20, NULL, 'Income',         'Discovered.Financial.Income',          5, 'FINANCIAL',       'DISCOVERED', 'Annual income or gross earnings amounts'),
+(21, NULL, 'CreditCard',     'Discovered.Financial.CreditCard',      5, 'FINANCIAL',       'DISCOVERED', 'Credit or debit card payment PANs'),
+(22, NULL, 'CreditScore',    'Discovered.Financial.CreditScore',     5, 'FINANCIAL',       'DISCOVERED', 'Customer credit ratings or risk scores'),
+(23, NULL, 'Address',        'Discovered.Location.Address',          6, 'LOCATION',        'DISCOVERED', 'Street, postal address, or residence'),
+(24, NULL, 'City',           'Discovered.Location.City',             6, 'LOCATION',        'DISCOVERED', 'Municipality, city, or town name'),
+(25, NULL, 'Public',         'Governance.Confidentiality.Public',    7, 'CONFIDENTIALITY', 'MANUAL',     'Publicly accessible unclassified data'),
+(26, NULL, 'Internal',       'Governance.Confidentiality.Internal',  7, 'CONFIDENTIALITY', 'MANUAL',     'General internal business data'),
+(27, NULL, 'Confidential',   'Governance.Confidentiality.Confidential', 7, 'CONFIDENTIALITY', 'MANUAL', 'Confidential enterprise business data'),
+(28, NULL, 'Restricted',     'Governance.Confidentiality.Restricted',   7, 'CONFIDENTIALITY', 'MANUAL', 'Highest protection tier: restricted access only')
 ON CONFLICT (full_path) DO NOTHING;
 
 -- ─── Tag Assignments ──────────────────────────────────────────────────────────
@@ -436,6 +436,35 @@ ON CONFLICT (version_id, platform_id) DO NOTHING;
 UPDATE policies SET current_version_id = 1 WHERE policy_id = 1 AND current_version_id IS NULL;
 UPDATE policies SET current_version_id = 2 WHERE policy_id = 2 AND current_version_id IS NULL;
 UPDATE policies SET current_version_id = 3 WHERE policy_id = 3 AND current_version_id IS NULL;
+
+-- ─── Platform Drivers Registry Seed ─────────────────────────────────────────
+INSERT INTO metadata_platform_drivers (driver_code, driver_name, description, fields) VALUES
+('SNOWFLAKE',   'Snowflake Data Cloud',      'Tag-based Masking & Row Access Policies',          '["account_identifier", "warehouse", "default_database", "role", "db_user", "db_password"]'::jsonb),
+('REDSHIFT',    'AWS Redshift Warehouse',   'Row-Level Security (RLS) & Dynamic Data Masking',   '["host", "port", "default_database", "db_user", "db_password", "iam_role_arn"]'::jsonb),
+('DATABRICKS',  'Databricks Unity Catalog',  'Column Masking & Row Filters (UC)',                '["host", "http_path", "catalog_name", "db_user", "db_password"]'::jsonb),
+('BIGQUERY',    'Google Cloud BigQuery',     'Policy Tags & Authorized Views',                   '["account_identifier", "default_database", "db_user", "db_password"]'::jsonb),
+('POSTGRESQL',  'Native PostgreSQL Engine',  'Row-Level Security & Cryptographic Masking',       '["host", "port", "default_database", "db_user", "db_password"]'::jsonb),
+('TRINO',       'Trino / Starburst Galaxy',  'Distributed Query Engine ABAC Security',           '["host", "port", "default_database", "db_user", "db_password"]'::jsonb),
+('CUSTOM_JDBC', 'Enterprise Generic JDBC',   'Standard SQL-92 Dialect Connection',               '["host", "port", "default_database", "db_user", "db_password"]'::jsonb)
+ON CONFLICT (driver_code) DO UPDATE SET
+    driver_name = EXCLUDED.driver_name,
+    description = EXCLUDED.description,
+    fields = EXCLUDED.fields;
+
+-- ─── Automated Tag Discovery Identifiers Seed ─────────────────────────────────
+INSERT INTO metadata_tag_rules (tag_path, category, regex_pattern, description) VALUES
+('Discovered.PII.Email',            'PII',       '.*(email|mail_addr|e_mail).*',                                                                'Email address classifier'),
+('Discovered.PII.Phone',            'PII',       '.*(phone|mobile|cell|contact_num|tel_num).*',                                                 'Telephone & mobile number classifier'),
+('Discovered.PII.SSN',              'PII',       '.*(ssn|social_sec|national_id|tax_id).*',                                                     'Social Security & National ID classifier'),
+('Discovered.PII.Name',             'PII',       '.*(first_name|last_name|full_name|customer_name|patient_name|user_name|contact_name).*',      'Person full/first/last name classifier'),
+('Discovered.Financial.CreditCard', 'FINANCIAL', '.*(card_num|credit_card|cc_num|pan|card_number).*',                                          'Payment card / credit card classifier'),
+('Discovered.Financial.Salary',     'FINANCIAL', '.*(salary|wage|compensation|bonus|annual_income|pay_rate).*',                                 'Employee compensation / wage classifier'),
+('Discovered.Financial.BankAccount','FINANCIAL', '.*(account_num|bank_acc|iban|routing_num|swift_code).*',                                     'Bank account and routing number classifier'),
+('Discovered.Location.Address',     'LOCATION',  '.*(address|street_addr|postal_code|zip_code|residence).*',                                    'Postal & physical street address classifier')
+ON CONFLICT (tag_path) DO UPDATE SET
+    category = EXCLUDED.category,
+    regex_pattern = EXCLUDED.regex_pattern,
+    description = EXCLUDED.description;
 
 -- ─── Advance Auto-Increment Sequences to Prevent Unique Constraint Collisions ──
 SELECT setval('organizations_organization_id_seq',           COALESCE((SELECT MAX(organization_id) FROM organizations), 1));

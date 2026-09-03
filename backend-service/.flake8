@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 100
+max-complexity = 20
+extend-ignore = E203, W503, E501
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    .venv,
+    venv,
+    rego
+per-file-ignores =
+    __init__.py: F401
+    */__init__.py: F401
+    src/main.py: E402
+    src/api/v1/auth.py: F401, F841

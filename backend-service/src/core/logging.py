@@ -1,6 +1,8 @@
 import logging
+
 import structlog
-from src.core.config import settings
+
+from core.config import settings
 
 
 def configure_logging() -> None:
@@ -12,8 +14,11 @@ def configure_logging() -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
-            structlog.processors.JSONRenderer() if settings.ENVIRONMENT != "development"
-            else structlog.dev.ConsoleRenderer(),
+            (
+                structlog.processors.JSONRenderer()
+                if settings.ENVIRONMENT != "development"
+                else structlog.dev.ConsoleRenderer()
+            ),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,

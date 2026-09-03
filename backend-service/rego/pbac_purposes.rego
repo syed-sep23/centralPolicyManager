@@ -3,7 +3,7 @@ package policy.pbac
 import rego.v1
 
 # ==============================================================================
-# Immuta-Grade Purpose-Based Access Control (PBAC) Engine
+# CES-Grade Purpose-Based Access Control (PBAC) Engine
 # Enforces regulatory purpose limitations (GDPR Art 5(1)(b), HIPAA Minimum Necessary),
 # user purpose authorizations, and validity periods.
 # ==============================================================================

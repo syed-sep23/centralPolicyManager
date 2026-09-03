@@ -1,6 +1,6 @@
 # Central Entitlement Service (CES) — Database Scripts & Schema Guide
 
-This directory contains the PostgreSQL DDL schema definition scripts and sample seed data for the **Central Entitlement Service (CES)** system (Immuta Clone).
+This directory contains the PostgreSQL DDL schema definition scripts and sample seed data for the **Central Entitlement Service (CES)** system (CES Clone).
 
 ---
 

@@ -1,12 +1,25 @@
 """Policies CRUD router."""
+
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.session import get_db
-from src.schemas.schemas import PolicyCreate, PolicyRead, PolicyUpdate, PolicyDetail, PaginatedPolicies
-from src.services.policy_service import PolicyService
-from src.core.auth import get_current_user, CurrentUser, require_roles
+from api.v1.deployments import execute_policy_deployment
+from core.auth import CurrentUser, get_current_user, require_roles
+from db.session import get_db
+from schemas.schemas import (
+    PaginatedPolicies,
+    PolicyCreate,
+    PolicyDetail,
+    PolicyRead,
+    PolicyUpdate,
+)
+from services.policy_compiler import (
+    compile_opa_rego,
+    generate_natural_language_summary,
+)
+from services.policy_service import PolicyService
 
 router = APIRouter()
 
@@ -21,14 +34,18 @@ async def list_policies(
     db: AsyncSession = Depends(get_db),
 ):
     svc = PolicyService(db)
-    total, items = await svc.list_policies(org_id=1, page=page, size=size, status_filter=status, domain_id=domain_id)
+    total, items = await svc.list_policies(
+        org_id=1, page=page, size=size, status_filter=status, domain_id=domain_id
+    )
     return PaginatedPolicies(total=total, page=page, size=size, items=items)
 
 
 @router.post("", response_model=PolicyRead, status_code=status.HTTP_201_CREATED)
 async def create_policy(
     body: PolicyCreate,
-    current_user: CurrentUser = Depends(require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")),
+    current_user: CurrentUser = Depends(
+        require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     svc = PolicyService(db)
@@ -52,7 +69,9 @@ async def get_policy(
 async def update_policy(
     policy_id: int,
     body: PolicyUpdate,
-    current_user: CurrentUser = Depends(require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")),
+    current_user: CurrentUser = Depends(
+        require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     svc = PolicyService(db)
@@ -65,7 +84,9 @@ async def update_policy(
 @router.post("/{policy_id}/submit", response_model=PolicyRead)
 async def submit_policy(
     policy_id: int,
-    current_user: CurrentUser = Depends(require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")),
+    current_user: CurrentUser = Depends(
+        require_roles("POLICY_AUTHOR", "POLICY_ADMIN", "SUPER_ADMIN")
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     svc = PolicyService(db)
@@ -78,7 +99,6 @@ async def submit_policy(
         version_id = policy.versions[0].version_id
 
     if version_id:
-        from src.api.v1.deployments import execute_policy_deployment
         await execute_policy_deployment(policy_id, version_id, None, db)
 
     policy = await svc.get_policy_detail(policy_id)
@@ -95,12 +115,16 @@ async def delete_policy(
     await svc.deprecate_policy(policy_id)
 
 
-from src.services.policy_compiler import compile_policy_preview
-
 @router.post("/preview-compile")
 async def preview_compile_policy(body: dict):
     """
-    Compile a draft Immuta Global Policy into live Snowflake DDL, Redshift DDL,
-    OPA Rego code, and plain English natural language summary without saving to DB.
+    Compile a draft CES Global Policy into OPA Rego code and natural language summary.
     """
-    return compile_policy_preview(body)
+    opa_rego = compile_opa_rego(body)
+    natural_language = generate_natural_language_summary(body)
+    return {
+        "opa_rego": opa_rego,
+        "natural_language": natural_language,
+        "snowflake_sql": "",
+        "redshift_sql": "",
+    }
