@@ -52,7 +52,7 @@ export const policiesApi = {
     api.delete(`/policies/${policyId}/rules/${ruleId}`),
 }
 
-// ─── Direct Cloud Connectors (Decoupled Microservices via Traefik Gateway) ───
+// ─── Direct Cloud Connectors (Decoupled Microservices via Edge Gateway) ───────
 export const connectorApi = {
   testSnowflake: (data: any) =>
     axios.post('/connectors/snowflake/api/v1/test-connection', data),

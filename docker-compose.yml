@@ -1,6 +1,6 @@
 # ==============================================================================
 # Central Entitlement Service (CES) - Docker Compose (Production Architecture)
-# Edge API Gateway: Traefik v3 | Dual-Network Zero-Trust Topology
+# Edge API Gateway: Nginx | Dual-Network Zero-Trust Topology
 # Service Environment Files: Located inside respective parent directories
 # ==============================================================================
 
@@ -14,67 +14,22 @@ x-service-defaults: &service-defaults
 
 services:
   # ============================================================================
-  # 1. Edge API Gateway & Reverse Proxy (Traefik v3)
+  # 1. Edge API Gateway & Reverse Proxy (Nginx)
   # ============================================================================
-  traefik:
-    image: traefik:v3.1
-    container_name: ces-traefik
+  gateway:
+    image: nginx:alpine
+    container_name: ces-gateway
     restart: unless-stopped
-    env_file:
-      - ./infrastructure/traefik/.env
-    command:
-      # Entrypoints
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.traefik.address=:8080"
-      
-      # API & Observability Dashboard
-      - "--api.dashboard=true"
-      - "--api.insecure=false"
-      
-      # Docker Provider Configuration
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=ces-public-net"
-      
-      # Dynamic File Provider (Enterprise Resilience)
-      - "--providers.file.directory=/etc/traefik/dynamic"
-      - "--providers.file.watch=true"
-      
-      # Logging & Metrics
-      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
-      - "--accesslog=${TRAEFIK_ACCESS_LOG:-true}"
     ports:
-      - "${TRAEFIK_WEB_PORT:-80}:80"
-      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"
+      - "${GATEWAY_PORT:-80}:80"
     volumes:
-      - ./infrastructure/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - public-net
       - internal-net
-    labels:
-      - "traefik.enable=true"
-      
-      # Global Security Headers Middleware
-      - "traefik.http.middlewares.sec-headers.headers.framedeny=false"
-      - "traefik.http.middlewares.sec-headers.headers.customframeoptionsvalue=SAMEORIGIN"
-      - "traefik.http.middlewares.sec-headers.headers.contenttypenosniff=true"
-      - "traefik.http.middlewares.sec-headers.headers.browserxssfilter=true"
-      - "traefik.http.middlewares.sec-headers.headers.referrerpolicy=strict-origin-when-cross-origin"
-      - "traefik.http.middlewares.sec-headers.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS,PATCH"
-      - "traefik.http.middlewares.sec-headers.headers.accesscontrolallowheaders=*"
-      - "traefik.http.middlewares.sec-headers.headers.accesscontrolalloworiginlist=*"
-      - "traefik.http.middlewares.sec-headers.headers.accesscontrolallowcredentials=true"
-      - "traefik.http.middlewares.sec-headers.headers.accesscontrolmaxage=3600"
-      
-      # Dashboard BasicAuth Middleware (admin / adminpassword123)
-      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:-admin:{SHA}f4MWA2s+v7KxRbCblH2OOyL5dNw=}"
-      
-      # Traefik Dashboard Router
-      - "traefik.http.routers.dashboard.rule=PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
-      - "traefik.http.routers.dashboard.entrypoints=traefik"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
+    depends_on:
+      - frontend-service
+      - backend-service
 
   # ============================================================================
   # 2. Frontend Presentation Service (React SPA)
@@ -91,14 +46,6 @@ services:
       - public-net
     depends_on:
       - backend-service
-    labels:
-      - "traefik.enable=true"
-      # SPA Catch-all router (priority 1 so API routes take precedence)
-      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.frontend.entrypoints=web"
-      - "traefik.http.routers.frontend.priority=1"
-      - "traefik.http.routers.frontend.middlewares=sec-headers"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
   # ============================================================================
   # 3. Core Backend Service (FastAPI Governance Engine)
@@ -110,7 +57,7 @@ services:
     container_name: ces-backend-service
     restart: unless-stopped
     ports:
-      - "8000:8000"   # Direct API access / Traefik routes via port 80
+      - "8000:8000"   # Direct API access / Gateway routes via port 80
     env_file:
       - ./backend-service/.env
     networks:
@@ -123,14 +70,6 @@ services:
         condition: service_started
       temporal-ns-register:
         condition: service_completed_successfully
-    labels:
-      - "traefik.enable=true"
-      # Route all API endpoints, OpenAPI schemas, and documentation via Traefik
-      - "traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`) || PathPrefix(`/redoc`) || PathPrefix(`/health`)"
-      - "traefik.http.routers.backend.entrypoints=web"
-      - "traefik.http.routers.backend.priority=100"
-      - "traefik.http.routers.backend.middlewares=sec-headers"
-      - "traefik.http.services.backend.loadbalancer.server.port=8000"
 
   # ============================================================================
   # 4. Pluggable Cloud Connectors (Snowflake & Redshift)
@@ -144,14 +83,6 @@ services:
       - "8006:8006"
     env_file:
       - ./snowflake-connector/.env
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.snowflake-connector.rule=PathPrefix(`/connectors/snowflake`)"
-      - "traefik.http.routers.snowflake-connector.entrypoints=web"
-      - "traefik.http.routers.snowflake-connector.priority=200"
-      - "traefik.http.middlewares.snowflake-stripprefix.stripprefix.prefixes=/connectors/snowflake"
-      - "traefik.http.routers.snowflake-connector.middlewares=sec-headers,snowflake-stripprefix"
-      - "traefik.http.services.snowflake-connector.loadbalancer.server.port=8006"
     <<: *service-defaults
 
   redshift-connector:
@@ -163,14 +94,6 @@ services:
       - "8007:8007"
     env_file:
       - ./redshift-connector/.env
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.redshift-connector.rule=PathPrefix(`/connectors/redshift`)"
-      - "traefik.http.routers.redshift-connector.entrypoints=web"
-      - "traefik.http.routers.redshift-connector.priority=200"
-      - "traefik.http.middlewares.redshift-stripprefix.stripprefix.prefixes=/connectors/redshift"
-      - "traefik.http.routers.redshift-connector.middlewares=sec-headers,redshift-stripprefix"
-      - "traefik.http.services.redshift-connector.loadbalancer.server.port=8007"
     <<: *service-defaults
 
   # ============================================================================
@@ -214,14 +137,6 @@ services:
       - "8181:8181"
     networks:
       - internal-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.opa.rule=PathPrefix(`/opa`) || PathPrefix(`/api/v1/opa`)"
-      - "traefik.http.routers.opa.entrypoints=web"
-      - "traefik.http.routers.opa.priority=250"
-      - "traefik.http.middlewares.opa-stripprefix.stripprefix.prefixes=/api/v1/opa,/opa"
-      - "traefik.http.routers.opa.middlewares=sec-headers,opa-stripprefix"
-      - "traefik.http.services.opa.loadbalancer.server.port=8181"
 
   # ============================================================================
   # 7. Temporal Workflow Infrastructure
@@ -320,14 +235,6 @@ services:
     networks:
       - public-net
       - internal-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.temporal-ui.rule=PathPrefix(`/temporal`)"
-      - "traefik.http.routers.temporal-ui.entrypoints=web"
-      - "traefik.http.routers.temporal-ui.priority=150"
-      - "traefik.http.middlewares.temporal-stripprefix.stripprefix.prefixes=/temporal"
-      - "traefik.http.routers.temporal-ui.middlewares=sec-headers,temporal-stripprefix"
-      - "traefik.http.services.temporal-ui.loadbalancer.server.port=8080"
     depends_on:
       temporal-ns-register:
         condition: service_completed_successfully

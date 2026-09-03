@@ -257,7 +257,7 @@ When deployed with Docker Compose, CES provisions the following coordinated serv
 
 | Container Name | Service | Technology | Gateway Route (Port 80) | Direct Port | Purpose |
 | --- | --- | --- | --- | --- | --- |
-| `ces-traefik` | Edge Gateway | Traefik v3.1 | [**http://localhost:80**](http://localhost:80) & [**:8080**](http://localhost:8080/dashboard/) | `:80`, `:8080` | Unified Ingress, Reverse Proxy, Security Middlewares & UI Dashboard |
+| `ces-gateway` | Edge Gateway | Nginx Alpine | [**http://localhost:80**](http://localhost:80) | `:80` | Unified Ingress, Reverse Proxy & Security Headers |
 | `ces-frontend` | Control Plane UI | React 18 / Mantine / Vite / Node serve | [**http://localhost/**](http://localhost/) | Internal `:80` | DSPM Dashboard, Policy Studio, Identity & PBAC Studio |
 | `ces-backend-service` | Core API | FastAPI / Python 3.12 / AsyncPG | [**http://localhost/api/v1**](http://localhost/api/v1) & [**/docs**](http://localhost/docs) | `:8000` | REST API, Compiler Engine, SCIM Ingestion |
 | `ces-snowflake-connector` | Snowflake Agent | FastAPI / Snowflake-Python Driver | [**http://localhost/connectors/snowflake**](http://localhost/connectors/snowflake/health) | `:8006` | Native Snowflake dynamic masking & RAP compiler |
@@ -292,11 +292,11 @@ docker compose up -d --build
 
 Wait 30–45 seconds for database migrations, Temporal schema registration, and frontend compilation to initialize. Then verify:
 
-1. Open [**http://localhost/dashboard**](http://localhost/dashboard) to view the live **Data Security Posture (DSPM)** dashboard (routed via Traefik).
+1. Open [**http://localhost/dashboard**](http://localhost/dashboard) to view the live **Data Security Posture (DSPM)** dashboard (routed via Nginx Gateway).
 2. Open [**http://localhost/policies**](http://localhost/policies) to view active data access policies.
 3. Open [**http://localhost/docs**](http://localhost/docs) (or `http://localhost:8000/docs`) to inspect the OpenAPI / Swagger documentation.
-4. Open [**http://localhost:8080/dashboard/**](http://localhost:8080/dashboard/) to inspect the Traefik v3 Edge Gateway & Router Dashboard (`admin` / `adminpassword123`).
-5. Open [**http://localhost:8088**](http://localhost:8088) to view the Temporal Workflow Execution dashboard.
+4. Open [**http://localhost:8088**](http://localhost:8088) (or [**http://localhost/temporal**](http://localhost/temporal)) to view the Temporal Workflow Execution dashboard.
+
 
 ---
 
@@ -333,8 +333,11 @@ docker compose down -v --remove-orphans
 # Rebuild and restart only the backend-service (FastAPI)
 docker compose up -d --build backend-service
 
-# Rebuild and restart only the frontend-service (React/Nginx)
+# Rebuild and restart only the frontend-service (React SPA)
 docker compose up -d --build frontend-service
+
+# Restart or reload the Edge Gateway (Nginx)
+docker compose restart gateway
 
 # Restart the OPA policy engine to reload Rego files
 docker compose restart opa
@@ -349,6 +352,9 @@ docker compose restart snowflake-connector redshift-connector
 ### C. Live Log Streaming & Diagnostics
 
 ```bash
+# Stream live logs from Edge Gateway (Nginx reverse proxy access & routing)
+docker logs -f --tail 50 ces-gateway
+
 # Stream live logs from backend-service (last 100 lines)
 docker logs -f --tail 100 ces-backend-service
 
@@ -360,9 +366,6 @@ docker logs -f --tail 50 ces-backend-service | grep -i "temporal"
 
 # Filter logs for errors and critical warnings across all services
 docker compose logs --tail 200 | grep -E "(ERROR|CRITICAL|Failed|Exception)"
-
-# Inspect Frontend Nginx access and error logs
-docker logs -f --tail 50 ces-frontend
 ```
 
 ### D. Interactive Shells & Container Debugging

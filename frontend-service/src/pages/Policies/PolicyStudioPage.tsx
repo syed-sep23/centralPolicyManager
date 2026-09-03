@@ -313,7 +313,7 @@ export default function PolicyStudioPage() {
       const backendResp = await policiesApi.previewCompile(draft)
       const baseResult = backendResp.data || {}
 
-      // 2. Fetch Snowflake DDL directly from Snowflake Connector via Traefik Gateway
+      // 2. Fetch Snowflake DDL directly from Snowflake Connector via Edge Gateway
       let snowflakeSql = '-- Snowflake compilation pending...'
       try {
         const sfResp = await connectorApi.compileSnowflake(draft)
@@ -322,7 +322,7 @@ export default function PolicyStudioPage() {
         snowflakeSql = `-- Snowflake Connector Note: ${sfErr?.response?.data?.detail || sfErr.message || 'Direct connector call failed'}`
       }
 
-      // 3. Fetch Redshift DDL directly from Redshift Connector via Traefik Gateway
+      // 3. Fetch Redshift DDL directly from Redshift Connector via Edge Gateway
       let redshiftSql = '-- Redshift compilation pending...'
       try {
         const rsResp = await connectorApi.compileRedshift(draft)
