@@ -423,14 +423,25 @@ INSERT INTO policy_rule_resource_tags (id, resource_id, tag_id, tag_value) VALUE
 (1, 1, 12, 'TRUE')  -- Links resource_id 1 to Discovered.PII.Email (tag_id 12)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO policy_version_targets (version_id, platform_id, deployment_status, temporal_workflow_id, error_message, deployed_at) VALUES
-(1, 1, 'SUCCESS', 'dep-init-sf-001', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
-(1, 2, 'SUCCESS', 'dep-init-rs-001', 'Successfully deployed native DDL to REDSHIFT',  NOW()),
-(2, 1, 'SUCCESS', 'dep-init-sf-002', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
-(2, 2, 'SUCCESS', 'dep-init-rs-002', 'Successfully deployed native DDL to REDSHIFT',  NOW()),
-(3, 1, 'SUCCESS', 'dep-init-sf-003', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
-(3, 2, 'SUCCESS', 'dep-init-rs-003', 'Successfully deployed native DDL to REDSHIFT',  NOW())
+INSERT INTO policy_version_targets (version_id, platform_id, deployment_status, celery_task_id, error_message, deployed_at) VALUES
+(1, 1, 'SUCCESS', 'celery-dep-sf-001', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
+(1, 2, 'SUCCESS', 'celery-dep-rs-001', 'Successfully deployed native DDL to REDSHIFT',  NOW()),
+(2, 1, 'SUCCESS', 'celery-dep-sf-002', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
+(2, 2, 'SUCCESS', 'celery-dep-rs-002', 'Successfully deployed native DDL to REDSHIFT',  NOW()),
+(3, 1, 'SUCCESS', 'celery-dep-sf-003', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
+(3, 2, 'SUCCESS', 'celery-dep-rs-003', 'Successfully deployed native DDL to REDSHIFT',  NOW())
 ON CONFLICT (version_id, platform_id) DO NOTHING;
+
+-- ─── Celery Beat Scheduled Cron History Seed Data ─────────────────────────────
+INSERT INTO celery_task_history (task_id, task_name, task_type, platform_code, status, started_at, completed_at, duration_ms, tables_synced, columns_synced, result_summary) VALUES
+('cron-sync-sf-001', 'sync_platform_metadata_cron', 'CRON_BEAT', 'SNOWFLAKE', 'SUCCESS', NOW() - INTERVAL '3 hour', NOW() - INTERVAL '3 hour' + INTERVAL '420 millisecond', 420, 8, 42, 'Successfully synchronized 8 tables and 42 columns from Snowflake Information Schema'),
+('cron-sync-rs-001', 'sync_platform_metadata_cron', 'CRON_BEAT', 'REDSHIFT',  'SUCCESS', NOW() - INTERVAL '3 hour', NOW() - INTERVAL '3 hour' + INTERVAL '390 millisecond', 390, 6, 31, 'Successfully synchronized 6 tables and 31 columns from Redshift Information Schema'),
+('cron-sync-sf-002', 'sync_platform_metadata_cron', 'CRON_BEAT', 'SNOWFLAKE', 'SUCCESS', NOW() - INTERVAL '2 hour', NOW() - INTERVAL '2 hour' + INTERVAL '415 millisecond', 415, 8, 42, 'Successfully synchronized 8 tables and 42 columns from Snowflake Information Schema'),
+('cron-sync-rs-002', 'sync_platform_metadata_cron', 'CRON_BEAT', 'REDSHIFT',  'SUCCESS', NOW() - INTERVAL '2 hour', NOW() - INTERVAL '2 hour' + INTERVAL '385 millisecond', 385, 6, 31, 'Successfully synchronized 6 tables and 31 columns from Redshift Information Schema'),
+('cron-sync-sf-003', 'sync_platform_metadata_cron', 'CRON_BEAT', 'SNOWFLAKE', 'SUCCESS', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour' + INTERVAL '430 millisecond', 430, 8, 42, 'Successfully synchronized 8 tables and 42 columns from Snowflake Information Schema'),
+('cron-sync-rs-003', 'sync_platform_metadata_cron', 'CRON_BEAT', 'REDSHIFT',  'SUCCESS', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour' + INTERVAL '395 millisecond', 395, 6, 31, 'Successfully synchronized 6 tables and 31 columns from Redshift Information Schema')
+ON CONFLICT (id) DO NOTHING;
+
 
 -- ─── Update Policies current_version_id ─────────────────────────────────────────
 UPDATE policies SET current_version_id = 1 WHERE policy_id = 1 AND current_version_id IS NULL;
@@ -495,3 +506,5 @@ SELECT setval('policy_rule_actions_action_id_seq',             COALESCE((SELECT 
 SELECT setval('policy_rule_conditions_condition_id_seq',       COALESCE((SELECT MAX(condition_id) FROM policy_rule_conditions), 1));
 SELECT setval('policy_rule_resources_resource_id_seq',         COALESCE((SELECT MAX(resource_id) FROM policy_rule_resources), 1));
 SELECT setval('policy_rule_resource_tags_id_seq',              COALESCE((SELECT MAX(id) FROM policy_rule_resource_tags), 1));
+SELECT setval('celery_task_history_id_seq',                    COALESCE((SELECT MAX(id) FROM celery_task_history), 1));
+

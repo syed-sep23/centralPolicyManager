@@ -1,31 +1,117 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Stack, Title, Text, TextInput, Group, Badge, Card, Box,
   Tabs, Table, Skeleton, Breadcrumbs, Anchor, Select, Paper,
-  Divider, ActionIcon, ScrollArea, Center, Button, Accordion,
+  Divider, ActionIcon, ScrollArea, Center, Button, Accordion, ThemeIcon,
 } from '@mantine/core'
 import {
   IconSearch, IconDatabase, IconTable, IconColumns, IconTag,
   IconFolder, IconFolderOpen, IconChevronRight, IconArrowLeft,
-  IconKey, IconCheck, IconX, IconShieldCheck, IconFilter,
+  IconKey, IconCheck, IconX, IconShieldCheck, IconFilter, IconRefresh,
 } from '@tabler/icons-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { notifications } from '@mantine/notifications'
 import { metadataApi } from '../../api/client'
 
 const SENSITIVITY_COLORS: Record<string, string> = {
   PUBLIC:'green', INTERNAL:'blue', CONFIDENTIAL:'yellow', RESTRICTED:'orange', TOP_SECRET:'red'
 }
 
+const VALID_CATALOG_TABS = ['platforms', 'products'] as const
+type CatalogTab = typeof VALID_CATALOG_TABS[number]
+
 export default function DataCatalogPage() {
+  const { tab } = useParams<{ tab?: string }>()
+  const navigate = useNavigate()
+
+  const activeTab: CatalogTab = useMemo(() => {
+    if (tab && (VALID_CATALOG_TABS as readonly string[]).includes(tab)) {
+      return tab as CatalogTab
+    }
+    return 'platforms'
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== activeTab) {
+      navigate(`/catalog/${activeTab}`, { replace: true })
+    }
+  }, [tab, activeTab, navigate])
+
+  const handleTabChange = (val: string | null) => {
+    if (val && (VALID_CATALOG_TABS as readonly string[]).includes(val)) {
+      navigate(`/catalog/${val}`)
+    }
+  }
+
   const [search,        setSearch]        = useState('')
   const [tableFilter,   setTableFilter]   = useState('')
   const [columnFilter,  setColumnFilter]  = useState('')
-  const [activeTab,     setActiveTab]     = useState<string | null>('platforms')
 
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(null)
   const [selectedDb,       setSelectedDb]        = useState<number | null>(null)
   const [selectedSchema,   setSelectedSchema]    = useState<number | null>(null)
   const [selectedTable,    setSelectedTable]     = useState<number | null>(null)
+
+  const queryClient = useQueryClient()
+
+  // Mutations for on-demand metadata sync
+  const syncPlatformMutation = useMutation({
+    mutationFn: (pid: number) => metadataApi.syncPlatform(pid),
+    onSuccess: (res: any) => {
+      const pName = res.data?.platform_name || 'Platform'
+      notifications.show({
+        title: 'Metadata Sync Dispatched ⚡',
+        message: `Task dispatched to Celery worker to introspect schemas for ${pName}.`,
+        color: 'teal',
+        icon: <IconCheck />,
+      })
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['platforms'] })
+        queryClient.invalidateQueries({ queryKey: ['databases'] })
+        queryClient.invalidateQueries({ queryKey: ['schemas'] })
+        queryClient.invalidateQueries({ queryKey: ['tables'] })
+        queryClient.invalidateQueries({ queryKey: ['columns'] })
+        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
+      }, 1500)
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Sync Dispatch Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        color: 'red',
+        icon: <IconX />,
+      })
+    },
+  })
+
+  const syncAllMutation = useMutation({
+    mutationFn: () => metadataApi.syncAllPlatforms(),
+    onSuccess: () => {
+      notifications.show({
+        title: 'Full Metadata Sync Dispatched ⚡',
+        message: 'Celery worker is now introspecting metadata across all active cloud data platforms.',
+        color: 'teal',
+        icon: <IconCheck />,
+      })
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['platforms'] })
+        queryClient.invalidateQueries({ queryKey: ['databases'] })
+        queryClient.invalidateQueries({ queryKey: ['schemas'] })
+        queryClient.invalidateQueries({ queryKey: ['tables'] })
+        queryClient.invalidateQueries({ queryKey: ['columns'] })
+        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
+      }, 1500)
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Sync Dispatch Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        color: 'red',
+        icon: <IconX />,
+      })
+    },
+  })
 
   // Data queries
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
@@ -95,10 +181,36 @@ export default function DataCatalogPage() {
   return (
     <Stack gap="lg">
       {/* Page Header */}
-      <Box>
-        <Title order={2}>Data Catalog & Platform Browser</Title>
-        <Text c="dimmed" size="sm">Browse enterprise platform metadata, databases, schemas, tables, and column attributes</Text>
-      </Box>
+      <Group justify="space-between" align="flex-start" wrap="wrap">
+        <Box>
+          <Title order={2}>Data Catalog & Platform Browser</Title>
+          <Text c="dimmed" size="sm">Browse enterprise platform metadata, databases, schemas, tables, and column attributes</Text>
+        </Box>
+        <Group gap="xs">
+          {selectedPlatform && (
+            <Button
+              leftSection={<IconRefresh size={16} />}
+              variant="light"
+              color="primary"
+              radius="md"
+              loading={syncPlatformMutation.isPending}
+              onClick={() => syncPlatformMutation.mutate(selectedPlatform)}
+            >
+              Sync {currentPlatformObj?.platform_name || 'Platform'}
+            </Button>
+          )}
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            variant="outline"
+            color="indigo"
+            radius="md"
+            loading={syncAllMutation.isPending}
+            onClick={() => syncAllMutation.mutate()}
+          >
+            Sync All Platforms
+          </Button>
+        </Group>
+      </Group>
 
       {/* Global Search Bar */}
       <TextInput
@@ -113,7 +225,7 @@ export default function DataCatalogPage() {
 
       {/* Global Search Autocomplete Dropdown */}
       {search.length >= 2 && (
-        <Card className="glass-card" p="md" radius="md">
+        <Card className="enterprise-card" p="md" radius="md">
           <Group justify="space-between" mb="xs">
             <Text fw={600} size="sm">Global Search Results for "{search}"</Text>
             <ActionIcon variant="subtle" size="sm" onClick={() => setSearch('')}><IconX size={14} /></ActionIcon>
@@ -121,25 +233,29 @@ export default function DataCatalogPage() {
           {searchRes.isLoading ? <Skeleton height={60} /> : (
             <Stack gap="xs">
               {(searchRes.data?.data?.tables ?? []).map((t: any) => (
-                <Group key={t.table_id} gap="sm" p="xs" style={{ borderRadius: 6, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
+                <Group key={t.table_id} gap="sm" p="xs" className="enterprise-card" style={{ borderRadius: 6, cursor: 'pointer' }}
                   onClick={() => {
                     setSelectedPlatform(t.platform_id || selectedPlatform)
                     setSelectedTable(t.table_id)
                     setSearch('')
                   }}>
-                  <IconTable size={16} color="#7c3aed" />
+                  <ThemeIcon color="indigo" variant="light" size="sm">
+                    <IconTable size={14} />
+                  </ThemeIcon>
                   <Text size="sm" fw={500}>{t.table_name}</Text>
-                  <Badge size="xs" variant="outline" color="violet">TABLE</Badge>
+                  <Badge size="xs" variant="outline" color="indigo">TABLE</Badge>
                   <Text size="xs" c="dimmed">{t.platform_code} · {t.database_name}.{t.schema_name}</Text>
                 </Group>
               ))}
               {(searchRes.data?.data?.columns ?? []).map((c: any) => (
-                <Group key={c.column_id} gap="sm" p="xs" style={{ borderRadius: 6, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
+                <Group key={c.column_id} gap="sm" p="xs" className="enterprise-card" style={{ borderRadius: 6, cursor: 'pointer' }}
                   onClick={() => {
                     if (c.table_id) setSelectedTable(c.table_id)
                     setSearch('')
                   }}>
-                  <IconColumns size={16} color="#3b82f6" />
+                  <ThemeIcon color="blue" variant="light" size="sm">
+                    <IconColumns size={14} />
+                  </ThemeIcon>
                   <Text size="sm" fw={500} ff="monospace">{c.column_name}</Text>
                   <Badge size="xs" color="blue">{c.normalized_type}</Badge>
                   <Text size="xs" c="dimmed">Table: {c.table_name} · {c.platform_code}</Text>
@@ -154,7 +270,7 @@ export default function DataCatalogPage() {
       )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onChange={setActiveTab} color="violet">
+      <Tabs value={activeTab} onChange={handleTabChange} color="indigo">
         <Tabs.List>
           <Tabs.Tab value="platforms" leftSection={<IconDatabase size={16} />}>Platform Explorer</Tabs.Tab>
           <Tabs.Tab value="products"  leftSection={<IconTag size={16} />}>Data Products ({productList.length})</Tabs.Tab>
@@ -163,10 +279,24 @@ export default function DataCatalogPage() {
         <Tabs.Panel value="platforms" pt="md">
           <Group align="stretch" gap="md" wrap="nowrap">
             {/* ── Left Sidebar Explorer (Hierarchy Tree) ────────────────────── */}
-            <Paper p="md" radius="lg" style={{ width: 290, minWidth: 290, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <Paper p="md" radius="md" className="explorer-sidebar" style={{ width: 290, minWidth: 290 }}>
               <Stack gap="md">
                 <Box>
-                  <Text size="xs" fw={600} c="dimmed" mb={4}>TARGET PLATFORM</Text>
+                  <Group justify="space-between" align="center" mb={4}>
+                    <Text size="xs" fw={600} c="dimmed">TARGET PLATFORM</Text>
+                  {selectedPlatform && (
+                    <Button
+                      variant="subtle"
+                      size="compact-xs"
+                      color="primary"
+                      leftSection={<IconRefresh size={12} />}
+                      loading={syncPlatformMutation.isPending}
+                      onClick={() => syncPlatformMutation.mutate(selectedPlatform)}
+                    >
+                      Sync
+                    </Button>
+                  )}
+                </Group>
                   <Select
                     data={platformList.map((p: any) => ({
                       value: String(p.platform_id),
@@ -182,12 +312,12 @@ export default function DataCatalogPage() {
                         setSelectedTable(null)
                       }
                     }}
-                    leftSection={<IconDatabase size={16} color="#7c3aed" />}
+                    leftSection={<IconDatabase size={16} />}
                     id="platform-select-dropdown"
                   />
                 </Box>
 
-                <Divider style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+                <Divider />
 
                 <Box>
                   <Text size="xs" fw={600} c="dimmed" mb="xs">DATABASES & SCHEMAS</Text>
@@ -211,10 +341,12 @@ export default function DataCatalogPage() {
                         }}
                       >
                         {dbList.map((dbObj: any) => (
-                          <Accordion.Item key={dbObj.database_id} value={String(dbObj.database_id)} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <Accordion.Item key={dbObj.database_id} value={String(dbObj.database_id)}>
                             <Accordion.Control p="xs">
                               <Group gap="xs">
-                                <IconFolder size={14} color="#7c3aed" />
+                                <ThemeIcon color="indigo" variant="subtle" size="sm">
+                                  <IconFolder size={14} />
+                                </ThemeIcon>
                                 <Text size="xs" fw={600}>{dbObj.database_name}</Text>
                               </Group>
                             </Accordion.Control>
@@ -228,8 +360,8 @@ export default function DataCatalogPage() {
                                       style={{
                                         borderRadius: 6,
                                         cursor: 'pointer',
-                                        background: selectedSchema === sObj.schema_id ? 'rgba(124,58,237,0.2)' : 'transparent',
-                                        border: selectedSchema === sObj.schema_id ? '1px solid rgba(124,58,237,0.4)' : '1px solid transparent',
+                                        backgroundColor: selectedSchema === sObj.schema_id ? 'var(--nav-active-bg)' : 'transparent',
+                                        color: selectedSchema === sObj.schema_id ? 'var(--nav-active-text)' : 'inherit',
                                       }}
                                       onClick={(e) => {
                                         e.stopPropagation()
@@ -239,7 +371,7 @@ export default function DataCatalogPage() {
                                     >
                                       <Group justify="space-between">
                                         <Group gap={6}>
-                                          <IconFolderOpen size={12} color="#3b82f6" />
+                                          <IconFolderOpen size={13} opacity={0.8} />
                                           <Text size="xs" fw={selectedSchema === sObj.schema_id ? 600 : 400}>
                                             {sObj.schema_name}
                                           </Text>
@@ -261,26 +393,26 @@ export default function DataCatalogPage() {
             </Paper>
 
             {/* ── Right Content Area (Tables & Columns Detail View) ──────────── */}
-            <Card className="glass-card" p="lg" radius="lg" style={{ flex: 1, minWidth: 0 }}>
+            <Card className="enterprise-card" p="lg" radius="md" style={{ flex: 1, minWidth: 0 }}>
               <Stack gap="md">
                 {/* Interactive Breadcrumb Bar */}
                 <Group justify="space-between" wrap="wrap">
                   <Breadcrumbs separator={<IconChevronRight size={14} opacity={0.5} />}>
-                    <Anchor size="xs" fw={600} color="violet" onClick={() => { setSelectedDb(null); setSelectedSchema(null); setSelectedTable(null) }}>
+                    <Anchor size="xs" fw={600} color="indigo" onClick={() => { setSelectedDb(null); setSelectedSchema(null); setSelectedTable(null) }}>
                       {currentPlatformObj?.platform_name || 'Platform'}
                     </Anchor>
                     {currentDbObj && (
-                      <Anchor size="xs" fw={600} color="violet" onClick={() => { setSelectedSchema(null); setSelectedTable(null) }}>
+                      <Anchor size="xs" fw={600} color="indigo" onClick={() => { setSelectedSchema(null); setSelectedTable(null) }}>
                         {currentDbObj.database_name}
                       </Anchor>
                     )}
                     {currentSchemaObj && (
-                      <Anchor size="xs" fw={600} color="violet" onClick={() => setSelectedTable(null)}>
+                      <Anchor size="xs" fw={600} color="indigo" onClick={() => setSelectedTable(null)}>
                         {currentSchemaObj.schema_name}
                       </Anchor>
                     )}
                     {currentTableObj && (
-                      <Text size="xs" fw={600} c="white">{currentTableObj.table_name}</Text>
+                      <Text size="xs" fw={600}>{currentTableObj.table_name}</Text>
                     )}
                   </Breadcrumbs>
 
@@ -291,19 +423,21 @@ export default function DataCatalogPage() {
                   )}
                 </Group>
 
-                <Divider style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+                <Divider />
 
                 {/* ── CASE 1: Table Selected -> Show Table & Columns Detail ────── */}
                 {selectedTable && currentTableObj ? (
                   <Stack gap="md">
                     {/* Table Header Card */}
-                    <Paper p="md" radius="md" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <Paper p="md" radius="md" className="enterprise-card">
                       <Group justify="space-between" align="flex-start">
                         <Box>
                           <Group gap="xs">
-                            <IconTable size={20} color="#7c3aed" />
+                            <ThemeIcon color="indigo" variant="light" size="md">
+                              <IconTable size={18} />
+                            </ThemeIcon>
                             <Title order={3}>{currentTableObj.table_name}</Title>
-                            <Badge color="violet" variant="light" size="sm">TABLE</Badge>
+                            <Badge color="indigo" variant="light" size="sm">TABLE</Badge>
                           </Group>
                           <Text size="xs" c="dimmed" mt={4} ff="monospace">
                             Full Path: {currentPlatformObj?.platform_code}.{currentDbObj?.database_name}.{currentSchemaObj?.schema_name}.{currentTableObj.table_name}
@@ -340,9 +474,9 @@ export default function DataCatalogPage() {
                     ) : columnList.length === 0 ? (
                       <Text size="xs" c="dimmed" ta="center" py="xl">No columns found matching filter.</Text>
                     ) : (
-                      <Box style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <Box style={{ borderRadius: 8, overflow: 'hidden' }}>
                         <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="md">
-                          <Table.Thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                          <Table.Thead>
                             <Table.Tr>
                               <Table.Th>Column Name</Table.Th>
                               <Table.Th>Data Type</Table.Th>
@@ -355,7 +489,7 @@ export default function DataCatalogPage() {
                               <Table.Tr key={c.column_id}>
                                 <Table.Td>
                                   <Group gap="xs">
-                                    <IconColumns size={14} color="#6b7280" />
+                                    <IconColumns size={14} opacity={0.7} />
                                     <Text size="sm" ff="monospace" fw={600}>{c.column_name}</Text>
                                   </Group>
                                 </Table.Td>
@@ -372,8 +506,8 @@ export default function DataCatalogPage() {
                                 <Table.Td>
                                   {c.is_primary_key ? (
                                     <Group gap={4}>
-                                      <IconKey size={12} color="#7c3aed" />
-                                      <Badge size="xs" color="violet">PRIMARY KEY</Badge>
+                                      <IconKey size={12} />
+                                      <Badge size="xs" color="indigo">PRIMARY KEY</Badge>
                                     </Group>
                                   ) : '—'}
                                 </Table.Td>
@@ -407,9 +541,9 @@ export default function DataCatalogPage() {
                     ) : tableList.length === 0 ? (
                       <Text size="xs" c="dimmed" ta="center" py="xl">No tables found in schema {currentSchemaObj?.schema_name}.</Text>
                     ) : (
-                      <Box style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <Box style={{ borderRadius: 8, overflow: 'hidden' }}>
                         <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
-                          <Table.Thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                          <Table.Thead>
                             <Table.Tr>
                               <Table.Th>Table Name</Table.Th>
                               <Table.Th>Estimated Rows</Table.Th>
@@ -421,7 +555,9 @@ export default function DataCatalogPage() {
                               <Table.Tr key={t.table_id} style={{ cursor: 'pointer' }} onClick={() => setSelectedTable(t.table_id)}>
                                 <Table.Td>
                                   <Group gap="xs">
-                                    <IconTable size={16} color="#7c3aed" />
+                                    <ThemeIcon color="indigo" variant="subtle" size="sm">
+                                      <IconTable size={16} />
+                                    </ThemeIcon>
                                     <Text size="sm" fw={600}>{t.table_name}</Text>
                                   </Group>
                                 </Table.Td>
@@ -429,7 +565,7 @@ export default function DataCatalogPage() {
                                   <Text size="xs" c="dimmed">{t.row_count_estimate?.toLocaleString() ?? '10,000+'} rows</Text>
                                 </Table.Td>
                                 <Table.Td>
-                                  <Button size="xs" variant="light" color="violet" leftSection={<IconColumns size={12} />}>
+                                  <Button size="xs" variant="light" color="indigo" leftSection={<IconColumns size={12} />}>
                                     View Columns
                                   </Button>
                                 </Table.Td>
@@ -444,7 +580,9 @@ export default function DataCatalogPage() {
                   /* ── CASE 3: No Schema Selected ────────────────────────────────── */
                   <Center py="xl">
                     <Stack align="center" gap="xs">
-                      <IconFolderOpen size={48} color="#7c3aed" opacity={0.5} />
+                      <ThemeIcon size={64} radius="xl" variant="light" color="indigo">
+                        <IconFolderOpen size={36} />
+                      </ThemeIcon>
                       <Text fw={600}>Select a Database & Schema</Text>
                       <Text size="xs" c="dimmed">Use the left sidebar tree to select a Database and Schema to view tables and column definitions.</Text>
                     </Stack>

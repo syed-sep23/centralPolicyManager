@@ -11,7 +11,7 @@ export default function AppHeader({ opened, toggle }: AppHeaderProps) {
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
 
   return (
-    <Group h="100%" px="md" justify="space-between" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
+    <Group h="100%" px="md" justify="space-between">
       <Group gap="sm">
         <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
         <Group gap="xs">

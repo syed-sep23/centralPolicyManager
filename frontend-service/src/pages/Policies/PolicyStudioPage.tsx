@@ -423,21 +423,21 @@ export default function PolicyStudioPage() {
       </Group>
 
       {/* ── Live Natural Language Sentence Summary Banner ───────────────────── */}
-      <Paper p="md" radius="md" style={{ background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(59, 130, 246, 0.12))', border: '1px solid rgba(124, 58, 237, 0.3)' }}>
+      <Paper p="md" radius="md" className="banner-panel">
         <Group align="flex-start" gap="sm">
-          <ThemeIcon color="violet" variant="light" size="lg" radius="md">
+          <ThemeIcon color="indigo" variant="light" size="lg" radius="md">
             <IconSparkles size={20} />
           </ThemeIcon>
           <Box style={{ flex: 1 }}>
             <Group justify="space-between" mb={2}>
-              <Text size="xs" fw={700} tt="uppercase" c="violet.4">
+              <Text size="xs" fw={700} tt="uppercase" c="indigo">
                 CES Plain English Rule Definition
               </Text>
               <Badge size="xs" color={enforceMode === 'ENFORCED' ? 'teal' : 'yellow'} variant="light">
                 {enforceMode}
               </Badge>
             </Group>
-            <Text size="sm" fw={500} c="white" style={{ lineHeight: 1.5 }}>
+            <Text size="sm" fw={500} style={{ lineHeight: 1.5 }}>
               {naturalLanguageText}
             </Text>
           </Box>
@@ -445,7 +445,7 @@ export default function PolicyStudioPage() {
       </Paper>
 
       {/* ── Stepper Navigation ────────────────────────────────────────────────── */}
-      <Stepper active={activeStep} onStepClick={handleStepClick} color="violet" radius="md">
+      <Stepper active={activeStep} onStepClick={handleStepClick} color="indigo" radius="md">
         <Stepper.Step label="1. Policy Archetype" description="Intent & metadata" />
         <Stepper.Step label="2. Global Scope" description="Tags & cloud platforms" />
         <Stepper.Step label="3. Rule & Exceptions" description="CES Action / Circumstance" />
@@ -474,8 +474,8 @@ export default function PolicyStudioPage() {
                     onClick={() => setArchetype(arch.type)}
                     style={{
                       cursor: 'pointer',
-                      borderColor: isSelected ? 'var(--mantine-color-violet-6)' : 'rgba(255,255,255,0.1)',
-                      background: isSelected ? 'rgba(124, 58, 237, 0.08)' : 'rgba(255,255,255,0.02)',
+                      borderColor: isSelected ? 'var(--mantine-color-indigo-6)' : undefined,
+                      backgroundColor: isSelected ? 'var(--nav-active-bg)' : 'transparent',
                       transition: 'all 0.2s ease',
                     }}
                   >
@@ -483,7 +483,7 @@ export default function PolicyStudioPage() {
                       <ThemeIcon color={arch.color} variant={isSelected ? 'filled' : 'light'} size="lg" radius="md">
                         <IconComp size={22} />
                       </ThemeIcon>
-                      {isSelected && <Badge color="violet" size="sm">Selected</Badge>}
+                      {isSelected && <Badge color="indigo" size="sm">Selected</Badge>}
                     </Group>
                     <Text fw={700} size="md" mb={4}>{arch.title}</Text>
                     <Text size="xs" c="dimmed" mb="xs">{arch.desc}</Text>
@@ -573,12 +573,12 @@ export default function PolicyStudioPage() {
                 onClick={() => setScopeType('GLOBAL_TAG')}
                 style={{
                   cursor: 'pointer',
-                  borderColor: scopeType === 'GLOBAL_TAG' ? 'var(--mantine-color-violet-6)' : 'rgba(255,255,255,0.1)',
-                  background: scopeType === 'GLOBAL_TAG' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(255,255,255,0.02)',
+                  borderColor: scopeType === 'GLOBAL_TAG' ? 'var(--mantine-color-indigo-6)' : undefined,
+                  backgroundColor: scopeType === 'GLOBAL_TAG' ? 'var(--nav-active-bg)' : 'transparent',
                 }}
               >
                 <Group gap="sm" mb="xs">
-                  <ThemeIcon color="violet" variant="light" size="md"><IconTag size={18} /></ThemeIcon>
+                  <ThemeIcon color="indigo" variant="light" size="md"><IconTag size={18} /></ThemeIcon>
                   <Text fw={700}>Global Tag-Based Trigger (CES Standard)</Text>
                 </Group>
                 <Text size="xs" c="dimmed">
@@ -593,8 +593,8 @@ export default function PolicyStudioPage() {
                 onClick={() => setScopeType('TARGETED')}
                 style={{
                   cursor: 'pointer',
-                  borderColor: scopeType === 'TARGETED' ? 'var(--mantine-color-violet-6)' : 'rgba(255,255,255,0.1)',
-                  background: scopeType === 'TARGETED' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(255,255,255,0.02)',
+                  borderColor: scopeType === 'TARGETED' ? 'var(--mantine-color-indigo-6)' : undefined,
+                  backgroundColor: scopeType === 'TARGETED' ? 'var(--nav-active-bg)' : 'transparent',
                 }}
               >
                 <Group gap="sm" mb="xs">
@@ -753,7 +753,7 @@ export default function PolicyStudioPage() {
               <Title order={4}>Step 3B: Circumstances & Exemptions</Title>
             </Group>
             <Text size="sm" c="dimmed" mb="md">
-              Specify who is exempt from this policy: <Text span fw={600} c="white">"FOR EVERYONE EXCEPT users who..."</Text>
+              Specify who is exempt from this policy: <Text span fw={600} c="indigo">"FOR EVERYONE EXCEPT users who..."</Text>
             </Text>
 
             <Stack gap="md">
@@ -860,7 +860,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="snowflake">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ fontSize: 12, borderRadius: 8, background: 'rgba(0,0,0,0.4)', color: '#a7f3d0' }}>
+                    <Code block className="code-block">
                       {previewResult.snowflake_sql}
                     </Code>
                   </ScrollArea.Autosize>
@@ -868,7 +868,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="redshift">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ fontSize: 12, borderRadius: 8, background: 'rgba(0,0,0,0.4)', color: '#fbcfe8' }}>
+                    <Code block className="code-block">
                       {previewResult.redshift_sql}
                     </Code>
                   </ScrollArea.Autosize>
@@ -876,7 +876,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="opa">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ fontSize: 12, borderRadius: 8, background: 'rgba(0,0,0,0.4)', color: '#bfdbfe' }}>
+                    <Code block className="code-block">
                       {previewResult.opa_rego}
                     </Code>
                   </ScrollArea.Autosize>
@@ -884,7 +884,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="json">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ fontSize: 12, borderRadius: 8, background: 'rgba(0,0,0,0.4)', color: '#fef08a' }}>
+                    <Code block className="code-block">
                       {JSON.stringify(constructDraftPayload(), null, 2)}
                     </Code>
                   </ScrollArea.Autosize>

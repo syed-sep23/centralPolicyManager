@@ -1,4 +1,4 @@
-import { NavLink, Stack, Text, Group, Avatar, Box, Divider, Badge, ActionIcon, Tooltip } from '@mantine/core'
+import { NavLink, Stack, Text, Group, Avatar, Box, Divider, Badge, ActionIcon, Tooltip, ThemeIcon } from '@mantine/core'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   IconShieldCheck, IconDatabase, IconUsers, IconClipboardList,
@@ -55,24 +55,13 @@ export default function AppSidebar() {
   ]
 
   return (
-    <Stack h="100%" justify="space-between" p="xs" gap={0} style={{ borderRight: '1px solid var(--mantine-color-default-border)' }}>
+    <Stack h="100%" justify="space-between" p="xs" gap={0}>
       {/* Brand Header */}
       <Box>
         <Group gap="xs" px="xs" py="sm" mb="xs">
-          <Box
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 6,
-              background: 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(79, 70, 229, 0.4)',
-            }}
-          >
-            <IconShield size={18} color="white" />
-          </Box>
+          <ThemeIcon size={30} radius="md" color="indigo" variant="filled">
+            <IconShield size={18} />
+          </ThemeIcon>
           <Box>
             <Group gap={4}>
               <Text fw={700} size="sm" lh={1.2}>CES DSPM</Text>

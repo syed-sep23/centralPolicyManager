@@ -1,13 +1,17 @@
-import uuid
-from typing import Optional
+"""Deployments Router — Celery Task Orchestration, OPA Validation & Server-Sent Events (SSE)."""
 
-import httpx
+import asyncio
+import json
+import uuid
+from typing import AsyncGenerator, Optional
+
+import redis.asyncio as aioredis
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from temporalio.client import Client
+from sse_starlette.sse import EventSourceResponse
 
 from api.v1.validation import ValidationRequest, validate_policy
 from core.config import settings
@@ -17,15 +21,11 @@ from services.policy_compiler import (
     fetch_policy_raw_payload,
     generate_natural_language_summary,
 )
-from workflows.deployment_workflow import PolicyDeploymentWorkflow
+from tasks.deployment_tasks import deploy_policy_task, publish_event
+from tasks.metadata_tasks import sync_platform_metadata_cron
 
 router = APIRouter()
 log = structlog.get_logger()
-
-CONNECTOR_MAP = {
-    "SNOWFLAKE": lambda: settings.SNOWFLAKE_CONNECTOR_URL,
-    "REDSHIFT": lambda: settings.REDSHIFT_CONNECTOR_URL,
-}
 
 
 class DeployRequest(BaseModel):
@@ -35,280 +35,279 @@ class DeployRequest(BaseModel):
 
 
 class DeployResponse(BaseModel):
-    deployment_id: str
+    event_id: str
+    celery_task_id: str
     policy_id: int
     version_id: int
     status: str
-    platforms: list[dict]
+    stream_url: str
+    message: str
 
 
-async def execute_policy_deployment(
-    policy_id: int,
-    version_id: int,
-    target_platform_ids: Optional[list[int]],
-    db: AsyncSession,
-) -> DeployResponse:
-    deployment_id = f"dep-{uuid.uuid4().hex[:8]}"
+class ManualSyncRequest(BaseModel):
+    platform_codes: Optional[list[str]] = None
+    platform_ids: Optional[list[int]] = None
 
-    # 0. ALWAYS check OPA decision first — only if OPA decision is positive (is_valid=True), proceed to Temporal & connector deployment
+
+@router.post("", response_model=DeployResponse, status_code=status.HTTP_202_ACCEPTED)
+async def trigger_policy_deployment(
+    body: DeployRequest, db: AsyncSession = Depends(get_db)
+):
+    """
+    1. Validate Policy with Open Policy Agent (OPA).
+    2. If valid, generate a unique Event ID.
+    3. Dispatch asynchronous Celery Worker deployment to push policy to Snowflake and Redshift.
+    4. Return Event ID and SSE stream endpoint for real-time frontend streaming.
+    """
+    policy_id = body.policy_id
+    version_id = body.version_id
+
+    # 1. ALWAYS validate policy against OPA first
     val_res = await validate_policy(
         ValidationRequest(policy_id=policy_id, version_id=version_id), db
     )
     if not val_res.is_valid:
         err_details = (
-            "; ".join(val_res.errors) if val_res.errors else "Policy failed OPA validation checks"
+            "; ".join(val_res.errors)
+            if val_res.errors
+            else "Policy failed declarative OPA validation checks"
         )
         await db.execute(
             text("UPDATE policies SET status = 'FAILED_VALIDATION' WHERE policy_id = :p"),
             {"p": policy_id},
         )
+        await db.commit()
         raise HTTPException(
             status_code=400,
-            detail=f"OPA Policy Validation Rejected (Decision: Negative). Violations: {err_details}. Temporal workflow deployment aborted.",
+            detail=f"OPA Policy Validation Rejected (Decision: Negative). Violations: {err_details}. Deployment aborted.",
         )
 
-    # 1. Fetch policy definition from catalog
-    compile_result = {
-        "raw_payload": await fetch_policy_raw_payload(version_id, db),
-        "snowflake_sql": "",
-        "redshift_sql": "",
-    }
+    # 2. Generate Unique Event ID for Server-Sent Events
+    event_id = f"evt_{uuid.uuid4().hex[:12]}"
 
-    if not target_platform_ids:
-        rows = (
-            (
-                await db.execute(
-                    text(
-                        "SELECT pvt.platform_id, mp.platform_code FROM policy_version_targets pvt JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id WHERE pvt.version_id = :v"
-                    ),
-                    {"v": version_id},
-                )
-            )
-            .mappings()
-            .all()
-        )
-        platforms = [dict(r) for r in rows]
-        if not platforms:
-            rows = (
-                (
-                    await db.execute(
-                        text(
-                            "SELECT platform_id, platform_code FROM metadata_platforms WHERE is_active = TRUE"
-                        )
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            platforms = [dict(r) for r in rows]
-    else:
-        rows = (
-            (
-                await db.execute(
-                    text(
-                        "SELECT platform_id, platform_code FROM metadata_platforms WHERE platform_id = ANY(:ids)"
-                    ),
-                    {"ids": target_platform_ids},
-                )
-            )
-            .mappings()
-            .all()
-        )
-        platforms = [dict(r) for r in rows]
-
-    for p in platforms:
-        await db.execute(
-            text("""
-                INSERT INTO policy_version_targets (version_id, platform_id, deployment_status, temporal_workflow_id)
-                VALUES (:v, :p, 'IN_PROGRESS', :wid)
-                ON CONFLICT (version_id, platform_id)
-                DO UPDATE SET deployment_status='IN_PROGRESS', temporal_workflow_id=:wid
-            """),
-            {"v": version_id, "p": p["platform_id"], "wid": deployment_id},
-        )
-
-    # 2. Trigger Temporal workflow
-    try:
-        temporal_client = await Client.connect(
-            settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE
-        )
-        workflow_input = {
+    # Publish initial OPA validation passed event
+    publish_event(
+        event_id,
+        {
+            "step": "OPA_VALIDATED",
+            "status": "SUCCESS",
+            "message": "OPA Validation Gate Passed ✅ Declarative Rego policy verified.",
+            "event_id": event_id,
             "policy_id": policy_id,
             "version_id": version_id,
-            "targets": [
-                {
-                    "platform_code": p["platform_code"],
-                    "connector_url": CONNECTOR_MAP.get(p["platform_code"], lambda: None)(),
-                    "policy_id": policy_id,
-                    "version_id": version_id,
-                }
-                for p in platforms
-            ],
-        }
-        await temporal_client.start_workflow(
-            PolicyDeploymentWorkflow.run,
-            workflow_input,
-            id=deployment_id,
-            task_queue=settings.TEMPORAL_TASK_QUEUE,
-        )
-    except Exception as e:
-        log.warning("temporal_workflow.trigger_failed", error=str(e))
-
-    # 3. Direct Connector Dispatch & Detailed Error / Status Updates
-    platform_statuses = []
-    for p in platforms:
-        p_code = p["platform_code"]
-        connector_url = CONNECTOR_MAP.get(p_code, lambda: None)()
-        sql_ddl = (
-            compile_result["snowflake_sql"]
-            if p_code == "SNOWFLAKE"
-            else compile_result["redshift_sql"]
-        )
-
-        p_status = {
-            "platform_id": p["platform_id"],
-            "platform_code": p_code,
-            "status": "PENDING",
-            "error_message": None,
-        }
-
-        if connector_url:
-            try:
-                async with httpx.AsyncClient(timeout=15) as client:
-                    resp = await client.post(
-                        f"{connector_url}/api/v1/apply",
-                        json={
-                            "policy_id": policy_id,
-                            "version_id": version_id,
-                            "platform_code": p_code,
-                            "sql_ddl": sql_ddl,
-                            "raw_policy": compile_result["raw_payload"],
-                        },
-                    )
-                result = resp.json()
-                if resp.status_code == 200 and result.get("success"):
-                    p_status["status"] = "SUCCESS"
-                    p_status["error_message"] = (
-                        result.get("message") or f"Successfully deployed native DDL to {p_code}"
-                    )
-                else:
-                    p_status["status"] = "FAILED"
-                    p_status["error_message"] = (
-                        result.get("error") or f"Connector error (HTTP {resp.status_code})"
-                    )
-            except Exception as e:
-                p_status["status"] = "FAILED"
-                p_status["error_message"] = f"Connector endpoint {connector_url} offline: {e}"
-        else:
-            p_status["status"] = "FAILED"
-            p_status["error_message"] = f"No connector configured for {p_code}."
-
-        platform_statuses.append(p_status)
-
-        # Update DB target status & error message
-        await db.execute(
-            text("""
-                UPDATE policy_version_targets
-                SET deployment_status = :s, error_message = :err, deployed_at = NOW()
-                WHERE version_id = :v AND platform_id = :p
-            """),
-            {
-                "s": p_status["status"],
-                "err": p_status["error_message"],
-                "v": version_id,
-                "p": p["platform_id"],
-            },
-        )
-
-    all_success = all(p["status"] == "SUCCESS" for p in platform_statuses)
-    final_policy_status = "ENFORCED"
-
-    await db.execute(
-        text("UPDATE policies SET status = :s WHERE policy_id = :p"),
-        {"s": final_policy_status, "p": policy_id},
+        },
     )
-    await db.execute(
-        text(
-            "UPDATE policy_versions SET status = 'DEPLOYED', deployed_at = NOW() WHERE version_id = :v"
-        ),
-        {"v": version_id},
-    )
-    await db.commit()
 
-    return DeployResponse(
-        deployment_id=deployment_id,
+    # 3. Asynchronously dispatch Celery Worker task
+    celery_async_result = deploy_policy_task.delay(
+        event_id=event_id,
         policy_id=policy_id,
         version_id=version_id,
-        status="COMPLETED" if all_success else "PARTIAL_SUCCESS",
-        platforms=platform_statuses,
+        target_platform_ids=body.target_platform_ids,
+    )
+    task_id = celery_async_result.id
+
+    log.info(
+        "policy_deployment.dispatched",
+        event_id=event_id,
+        celery_task_id=task_id,
+        policy_id=policy_id,
+    )
+
+    return DeployResponse(
+        event_id=event_id,
+        celery_task_id=task_id,
+        policy_id=policy_id,
+        version_id=version_id,
+        status="PENDING",
+        stream_url=f"/api/v1/deployments/stream/{event_id}",
+        message="OPA validation passed. Asynchronous Celery worker deployment initiated.",
     )
 
 
-@router.post("", response_model=DeployResponse, status_code=202)
-async def trigger_deployment(body: DeployRequest, db: AsyncSession = Depends(get_db)):
-    return await execute_policy_deployment(
-        body.policy_id, body.version_id, body.target_platform_ids, db
+@router.get("/stream/{event_id}")
+async def stream_deployment_events(event_id: str, request: Request):
+    """
+    Stream Server-Sent Events (SSE) to the frontend during policy deployment.
+    Listens to the Redis Pub/Sub channel 'deployment_events:{event_id}' and yields events in real time.
+    """
+    async def event_generator() -> AsyncGenerator[dict, None]:
+        r = None
+        pubsub = None
+        try:
+            r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+            pubsub = r.pubsub()
+            channel_name = f"deployment_events:{event_id}"
+            await pubsub.subscribe(channel_name)
+
+            # Check if there is already an initial cached state
+            cached = await r.get(f"deployment_state:{event_id}")
+            if cached:
+                yield {
+                    "event": "deployment_update",
+                    "data": cached,
+                    "id": event_id,
+                }
+
+            # Listen for new events from Celery worker
+            timeout_seconds = 60
+            start_time = asyncio.get_event_loop().time()
+
+            while True:
+                if await request.is_disconnected():
+                    log.info("sse_client.disconnected", event_id=event_id)
+                    break
+
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0
+                )
+                if message and message["type"] == "message":
+                    raw_data = message["data"]
+                    yield {
+                        "event": "deployment_update",
+                        "data": raw_data,
+                        "id": event_id,
+                    }
+                    try:
+                        parsed = json.loads(raw_data)
+                        if parsed.get("step") in ("COMPLETED", "FAILED"):
+                            # Final event reached; allow brief pause then end stream
+                            await asyncio.sleep(0.5)
+                            break
+                    except Exception:
+                        pass
+                else:
+                    # Keepalive ping
+                    yield {
+                        "event": "ping",
+                        "data": json.dumps({"heartbeat": True, "event_id": event_id}),
+                    }
+
+                if (asyncio.get_event_loop().time() - start_time) > timeout_seconds:
+                    yield {
+                        "event": "timeout",
+                        "data": json.dumps({"message": "Stream timeout reached"}),
+                    }
+                    break
+
+                await asyncio.sleep(0.5)
+
+        except Exception as exc:
+            log.warning("sse_stream.error", event_id=event_id, error=str(exc))
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": str(exc), "event_id": event_id}),
+            }
+        finally:
+            if pubsub:
+                await pubsub.unsubscribe(f"deployment_events:{event_id}")
+                await pubsub.close()
+            if r:
+                await r.aclose()
+
+    return EventSourceResponse(event_generator())
+
+
+@router.get("/tasks/history")
+async def get_celery_task_history(
+    task_type: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return historical execution records of Celery Beat cron tasks and worker runs.
+    Reflected when user loads or views the Deployments history UI.
+    """
+    query_str = """
+        SELECT id, task_id, task_name, task_type, platform_code, status,
+               started_at, completed_at, duration_ms, tables_synced, columns_synced,
+               result_summary, error_message
+        FROM celery_task_history
+    """
+    params = {"limit": limit}
+    if task_type:
+        query_str += " WHERE task_type = :ttype"
+        params["ttype"] = task_type
+    query_str += " ORDER BY started_at DESC LIMIT :limit"
+
+    rows = (await db.execute(text(query_str), params)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.post("/tasks/sync-now", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_manual_metadata_sync(
+    body: Optional[ManualSyncRequest] = None,
+    platform_codes: Optional[list[str]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Trigger an immediate on-demand metadata synchronization task via Celery worker.
+    Accepts target platform codes or IDs in the body or query params.
+    Results will be committed to PostgreSQL celery_task_history upon completion.
+    """
+    target_codes: list[str] = []
+    if platform_codes:
+        target_codes.extend(platform_codes)
+    if body:
+        if body.platform_codes:
+            target_codes.extend(body.platform_codes)
+        if body.platform_ids:
+            res = await db.execute(
+                text("SELECT platform_code FROM metadata_platforms WHERE platform_id = ANY(:pids) AND is_active = TRUE"),
+                {"pids": body.platform_ids},
+            )
+            target_codes.extend(res.scalars().all())
+
+    final_codes = list(set(target_codes)) if target_codes else None
+
+    async_result = sync_platform_metadata_cron.delay(
+        task_type="MANUAL_SYNC", platform_codes=final_codes
     )
+    return {
+        "status": "DISPATCHED",
+        "task_id": async_result.id,
+        "platform_codes": final_codes,
+        "message": "Metadata synchronization task dispatched to Celery worker.",
+    }
 
 
 @router.get("/{policy_id}/status")
-async def deployment_status(policy_id: int, db: AsyncSession = Depends(get_db)):
-    rows = (
-        (
-            await db.execute(
-                text("""
-            SELECT pvt.*, mp.platform_code, pv.version_number, pv.version_label
-            FROM policy_version_targets pvt
-            JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
-            JOIN policy_versions pv ON pv.version_id = pvt.version_id
-            WHERE pv.policy_id = :p
-            ORDER BY pvt.deployed_at DESC NULLS LAST, pvt.version_id DESC
-        """),
-                {"p": policy_id},
+async def deployment_status(
+    policy_id: int,
+    version_id: Optional[int] = None,
+    all_versions: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return status of deployment targets for a specific policy (defaults to current/active version)."""
+    if version_id:
+        filter_clause = "pv.policy_id = :p AND pv.version_id = :v"
+        params = {"p": policy_id, "v": version_id}
+    elif all_versions:
+        filter_clause = "pv.policy_id = :p"
+        params = {"p": policy_id}
+    else:
+        filter_clause = """
+            pv.policy_id = :p AND pv.version_id = (
+                SELECT version_id FROM policy_versions 
+                WHERE policy_id = :p 
+                ORDER BY is_current DESC, version_number DESC 
+                LIMIT 1
             )
-        )
-        .mappings()
-        .all()
-    )
+        """
+        params = {"p": policy_id}
 
-    temporal_client = None
-    try:
-        temporal_client = await Client.connect(
-            settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE
-        )
-    except Exception as exc:
-        log.warning("temporal_client.connect_failed", error=str(exc))
-
-    wf_status_cache = {}
-    results = []
-    for r in rows:
-        item = dict(r)
-        wid = item.get("temporal_workflow_id")
-        if wid and temporal_client:
-            if wid not in wf_status_cache:
-                try:
-                    handle = temporal_client.get_workflow_handle(wid)
-                    desc = await handle.describe()
-                    wf_status_cache[wid] = {
-                        "workflow_status": desc.status.name,
-                        "workflow_close_time": (
-                            desc.close_time.isoformat() if desc.close_time else None
-                        ),
-                    }
-                except Exception:
-                    wf_status_cache[wid] = {
-                        "workflow_status": "NOT_FOUND",
-                        "workflow_close_time": None,
-                    }
-            item.update(wf_status_cache[wid])
-        else:
-            item["workflow_status"] = (
-                "COMPLETED" if item.get("deployment_status") == "SUCCESS" else "PENDING"
-            )
-            item["workflow_close_time"] = None
-        results.append(item)
-
-    return results
+    query = f"""
+        SELECT pvt.target_id, pvt.version_id, pvt.platform_id, pvt.deployment_status,
+               pvt.celery_task_id, pvt.deployed_at, pvt.error_message,
+               mp.platform_code, pv.version_number, pv.version_label
+        FROM policy_version_targets pvt
+        JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
+        JOIN policy_versions pv ON pv.version_id = pvt.version_id
+        WHERE {filter_clause}
+        ORDER BY pvt.deployed_at DESC NULLS LAST, pvt.version_id DESC
+    """
+    rows = (await db.execute(text(query), params)).mappings().all()
+    return [dict(r) for r in rows]
 
 
 @router.get("/{policy_id}/compiled")

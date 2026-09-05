@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from db.session import get_db
 from services.tag_scanner import run_sensitive_data_discovery
+from tasks.metadata_tasks import sync_platform_metadata_cron
 
 router = APIRouter()
 
@@ -322,6 +323,52 @@ async def delete_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
     )
     await db.commit()
     return {"status": "DELETED", "platform_id": platform_id}
+
+
+@router.post("/platforms/{platform_id}/sync", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_platform_sync(platform_id: int, db: AsyncSession = Depends(get_db)):
+    """Trigger on-demand metadata sync for a specific platform."""
+    row = (
+        (
+            await db.execute(
+                text(
+                    "SELECT platform_id, platform_code, platform_name FROM metadata_platforms WHERE platform_id = :p AND is_active = TRUE"
+                ),
+                {"p": platform_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Platform {platform_id} not found")
+
+    p_code = row["platform_code"]
+    p_name = row["platform_name"]
+    async_result = sync_platform_metadata_cron.delay(
+        task_type="MANUAL_SYNC", platform_codes=[p_code]
+    )
+    return {
+        "status": "DISPATCHED",
+        "task_id": async_result.id,
+        "platform_id": platform_id,
+        "platform_code": p_code,
+        "platform_name": p_name,
+        "message": f"Metadata synchronization task for {p_name} ({p_code}) dispatched to Celery worker.",
+    }
+
+
+@router.post("/platforms/sync-all", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_all_platforms_sync():
+    """Trigger on-demand metadata sync across all connected active data platforms."""
+    async_result = sync_platform_metadata_cron.delay(
+        task_type="MANUAL_SYNC", platform_codes=None
+    )
+    return {
+        "status": "DISPATCHED",
+        "task_id": async_result.id,
+        "message": "Metadata synchronization task for all active platforms dispatched to Celery worker.",
+    }
 
 
 @router.get("/platforms/{platform_id}/databases")

@@ -193,15 +193,15 @@ export default function DashboardPage() {
               />
               <Group gap="xl">
                 <Group gap="xs">
-                  <Box w={10} h={10} style={{ borderRadius: 3, background: 'var(--mantine-color-indigo-filled)' }} />
+                  <Box w={10} h={10} bg="indigo" style={{ borderRadius: 3 }} />
                   <Text size="xs" fw={600}>Enforced ({enforcedCount})</Text>
                 </Group>
                 <Group gap="xs">
-                  <Box w={10} h={10} style={{ borderRadius: 3, background: 'var(--mantine-color-teal-filled)' }} />
+                  <Box w={10} h={10} bg="teal" style={{ borderRadius: 3 }} />
                   <Text size="xs" fw={600}>Validated ({validatedCount})</Text>
                 </Group>
                 <Group gap="xs">
-                  <Box w={10} h={10} style={{ borderRadius: 3, background: 'var(--mantine-color-orange-filled)' }} />
+                  <Box w={10} h={10} bg="orange" style={{ borderRadius: 3 }} />
                   <Text size="xs" fw={600}>Draft ({draftCount})</Text>
                 </Group>
               </Group>
@@ -211,7 +211,7 @@ export default function DashboardPage() {
       </Grid>
 
       {/* ── Sensitive Classification Heatmap by Category ─────────────────────── */}
-      <Card p="md" radius="md" withBorder>
+      <Card p="md" radius="md" withBorder className="enterprise-card">
         <Group justify="space-between" mb="sm">
           <Box>
             <Text fw={700} size="sm">Discovered Data Classifications & Categories</Text>
@@ -222,7 +222,7 @@ export default function DashboardPage() {
 
         <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
           {tagCategories.map((cat: any) => (
-            <Paper key={cat.tag_category} p="sm" radius="md" withBorder style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <Paper key={cat.tag_category} p="sm" radius="md" withBorder className="enterprise-card">
               <Group justify="space-between">
                 <Box>
                   <Text size="xs" fw={700} c="dimmed">{cat.tag_category}</Text>
@@ -235,7 +235,7 @@ export default function DashboardPage() {
               </Group>
             </Paper>
           ))}
-          <Paper p="sm" radius="md" withBorder style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <Paper p="sm" radius="md" withBorder className="enterprise-card">
             <Group justify="space-between">
               <Box>
                 <Text size="xs" fw={700} c="dimmed">USER IDENTITIES</Text>
@@ -247,7 +247,7 @@ export default function DashboardPage() {
               </ThemeIcon>
             </Group>
           </Paper>
-          <Paper p="sm" radius="md" withBorder style={{ background: 'rgba(255,255,255,0.02)' }}>
+          <Paper p="sm" radius="md" withBorder className="enterprise-card">
             <Group justify="space-between">
               <Box>
                 <Text size="xs" fw={700} c="dimmed">PBAC PURPOSES</Text>

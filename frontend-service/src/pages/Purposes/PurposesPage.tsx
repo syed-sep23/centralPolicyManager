@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   Stack, Title, Text, Group, Button, Badge, SimpleGrid,
   Modal, TextInput, Textarea, ActionIcon, Paper, Box, Select,
-  NumberInput, Card, Divider, Avatar, Drawer, Table, Tooltip,
+  NumberInput, Card, Divider, Avatar, Drawer, Table, Tooltip, ThemeIcon,
 } from '@mantine/core'
 import {
   IconTarget, IconPlus, IconCheck, IconShieldCheck, IconUsers,
@@ -110,33 +110,23 @@ export default function PurposesPage() {
             Enforce context over identity. Grant and restrict data usage based on the specific, contextual purpose behind a user's or tool's request.
           </Text>
         </Box>
-        <Button leftSection={<IconPlus size={16} />} color="violet" radius="md" onClick={() => setModalOpened(true)}>
+        <Button leftSection={<IconPlus size={16} />} color="indigo" radius="md" onClick={() => setModalOpened(true)}>
           New Business Purpose
         </Button>
       </Group>
 
       {/* ── PBAC Concept Architecture Banner ─────────────────────────────────── */}
-      <Paper p="md" radius="md" style={{ background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(20, 184, 166, 0.08))', border: '1px solid rgba(124, 58, 237, 0.25)' }}>
+      <Paper p="md" radius="md" className="banner-panel">
         <Group align="flex-start" gap="md">
-          <Box
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 8,
-              background: 'rgba(124, 58, 237, 0.15)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <IconGavel size={22} color="var(--mantine-color-violet-4)" />
-          </Box>
+          <ThemeIcon size={40} radius="md" variant="light" color="indigo">
+            <IconGavel size={22} />
+          </ThemeIcon>
           <Box style={{ flex: 1 }}>
-            <Text fw={700} size="sm" c="violet.4">
+            <Text fw={700} size="sm" c="indigo">
               Context Over Identity: Combining PBAC with Dynamic ABAC
             </Text>
             <Text size="xs" c="dimmed" mt={2} style={{ lineHeight: 1.6 }}>
-              Under GDPR Article 5(1)(b) and HIPAA 45 CFR § 164.502(b), data collected for one reason cannot be freely queried for another. When querying platforms like Snowflake or Databricks, CES evaluates the active purpose (e.g. <Text span fw={600} c="white">@purpose == 'FRAUD_DETECTION'</Text>) alongside user clearance and data tags to enforce strict purpose limitation automatically.
+              Under GDPR Article 5(1)(b) and HIPAA 45 CFR § 164.502(b), data collected for one reason cannot be freely queried for another. When querying platforms like Snowflake or Databricks, CES evaluates the active purpose (e.g. <Text span fw={600}>@purpose == 'FRAUD_DETECTION'</Text>) alongside user clearance and data tags to enforce strict purpose limitation automatically.
             </Text>
           </Box>
         </Group>
@@ -145,25 +135,15 @@ export default function PurposesPage() {
       {/* ── Grid of Business Purposes ────────────────────────────────────────── */}
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">
         {pList.map((p: any) => (
-          <Card key={p.purpose_id} p="lg" radius="md" withBorder style={{ position: 'relative' }}>
+          <Card key={p.purpose_id} p="lg" radius="md" withBorder className="enterprise-card" style={{ position: 'relative' }}>
             <Group justify="space-between" align="flex-start" mb="xs">
               <Group gap="xs">
-                <Box
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    background: 'rgba(124, 58, 237, 0.15)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <IconTarget size={20} color="var(--mantine-color-violet-4)" />
-                </Box>
+                <ThemeIcon size={36} radius="md" variant="light" color="indigo">
+                  <IconTarget size={20} />
+                </ThemeIcon>
                 <Box>
                   <Text fw={700} size="sm">{p.purpose_name}</Text>
-                  <Badge size="xs" color="violet" variant="outline">{p.purpose_code}</Badge>
+                  <Badge size="xs" color="indigo" variant="outline">{p.purpose_code}</Badge>
                 </Box>
               </Group>
             </Group>
@@ -225,7 +205,7 @@ export default function PurposesPage() {
         {selectedPurpose && (
           <Stack gap="md">
             <Text size="xs" c="dimmed">
-              Users granted this purpose are authorized to select it in their query session context or subscription requests to access governed datasets up to <Text span fw={600} c="white">{selectedPurpose.max_sensitivity}</Text> sensitivity.
+              Users granted this purpose are authorized to select it in their query session context or subscription requests to access governed datasets up to <Text span fw={600} c="indigo">{selectedPurpose.max_sensitivity}</Text> sensitivity.
             </Text>
 
             {/* Quick Authorize User Input */}

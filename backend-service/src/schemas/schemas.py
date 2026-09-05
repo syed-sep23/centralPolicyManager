@@ -138,7 +138,7 @@ class VersionTargetRead(BaseModel):
     platform_id: int
     platform_code: Optional[str] = None
     deployment_status: Optional[str] = None
-    temporal_workflow_id: Optional[str] = None
+    celery_task_id: Optional[str] = None
     deployed_at: Optional[datetime] = None
 
 
@@ -198,6 +198,10 @@ class PolicyRead(BaseModel):
     status: str
     opa_status: Optional[str] = None
     deployment_status: Optional[str] = None
+    event_id: Optional[str] = None
+    stream_url: Optional[str] = None
+    celery_task_id: Optional[str] = None
+
     effective_date: Optional[date]
     expiry_date: Optional[date]
     created_at: datetime

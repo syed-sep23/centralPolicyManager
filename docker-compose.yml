@@ -68,8 +68,8 @@ services:
         condition: service_healthy
       opa:
         condition: service_started
-      temporal-ns-register:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   # ============================================================================
   # 4. Pluggable Cloud Connectors (Snowflake & Redshift)
@@ -139,105 +139,72 @@ services:
       - internal-net
 
   # ============================================================================
-  # 7. Temporal Workflow Infrastructure
+  # 7. Redis Message Broker & Pub/Sub Event Bus
   # ============================================================================
-  temporal-db-init:
-    image: postgres:16-alpine
-    container_name: ces-temporal-db-init
+  redis:
+    image: redis:7-alpine
+    container_name: ces-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - internal-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============================================================================
+  # 8. Celery Worker Service (Long-Running Task Execution)
+  # ============================================================================
+  celery-worker:
+    build:
+      context: .
+      dockerfile: backend-service/Dockerfile
+    container_name: ces-celery-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "src.celery_app.celery", "worker", "--loglevel=info", "-c", "4"]
+    env_file:
+      - ./backend-service/.env
     environment:
-      PGPASSWORD: ${PG_PASSWORD:-ces_secret_2024}
-      POSTGRES_HOST: postgresql
-      POSTGRES_PORT: "5432"
-      POSTGRES_SUPERUSER: ces_user
-      POSTGRES_DB: ces_db
-      TEMPORAL_PG_USER: ${TEMPORAL_PG_USER:-temporal_user}
-      TEMPORAL_PG_PASSWORD: ${TEMPORAL_PG_PASSWORD:-temporal_secret_2024}
-    volumes:
-      - ./infrastructure/temporal/init-temporal-db.sh:/init-temporal-db.sh:ro
-    entrypoint: ["sh", "/init-temporal-db.sh"]
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://ces_user:${PG_PASSWORD:-ces_secret_2024}@postgresql:5432/ces_db
     networks:
       - internal-net
     depends_on:
       postgresql:
         condition: service_healthy
-    restart: "no"
+      redis:
+        condition: service_healthy
 
-  temporal-schema-setup:
-    image: temporalio/admin-tools:1.30.1
-    container_name: ces-temporal-schema-setup
-    environment:
-      POSTGRES_HOST: postgresql
-      POSTGRES_PORT: "5432"
-      TEMPORAL_PG_USER: ${TEMPORAL_PG_USER:-temporal_user}
-      TEMPORAL_PG_PASSWORD: ${TEMPORAL_PG_PASSWORD:-temporal_secret_2024}
-    volumes:
-      - ./infrastructure/temporal/setup-schema.sh:/setup-schema.sh:ro
-    entrypoint: ["sh", "/setup-schema.sh"]
-    networks:
-      - internal-net
-    depends_on:
-      temporal-db-init:
-        condition: service_completed_successfully
-    restart: "no"
-
-  temporal:
-    image: temporalio/server:1.29.1
-    container_name: ces-temporal
+  # ============================================================================
+  # 9. Celery Beat Service (1-Hour Periodic Cron Scheduler)
+  # ============================================================================
+  celery-beat:
+    build:
+      context: .
+      dockerfile: backend-service/Dockerfile
+    container_name: ces-celery-beat
     restart: unless-stopped
+    command: ["celery", "-A", "src.celery_app.celery", "beat", "--loglevel=info"]
+    env_file:
+      - ./backend-service/.env
     environment:
-      DB: postgres12
-      DB_PORT: "5432"
-      POSTGRES_USER: ${TEMPORAL_PG_USER:-temporal_user}
-      POSTGRES_PWD: ${TEMPORAL_PG_PASSWORD:-temporal_secret_2024}
-      POSTGRES_SEEDS: postgresql
-      DBNAME: temporal
-      VISIBILITY_DBNAME: temporal_visibility
-      NUM_HISTORY_SHARDS: "4"
-      SERVICES: frontend,history,matching,worker
-      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/docker.yaml
-      LOG_LEVEL: info
-    volumes:
-      - ./infrastructure/temporal/docker.yaml:/etc/temporal/dynamicconfig/docker.yaml:ro
-    ports:
-      - "7233:7233"
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://ces_user:${PG_PASSWORD:-ces_secret_2024}@postgresql:5432/ces_db
     networks:
       - internal-net
     depends_on:
-      temporal-schema-setup:
-        condition: service_completed_successfully
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  temporal-ns-register:
-    image: temporalio/admin-tools:1.30.1
-    container_name: ces-temporal-ns-register
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
-      RETENTION: "72h"
-    volumes:
-      - ./infrastructure/temporal/register-namespace.sh:/register-namespace.sh:ro
-    entrypoint: ["sh", "/register-namespace.sh"]
-    networks:
-      - internal-net
-    depends_on:
-      temporal:
-        condition: service_started
-    restart: "no"
-
-  temporal-ui:
-    image: temporalio/ui:2.43.3
-    container_name: ces-temporal-ui
-    restart: unless-stopped
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:3000
-    ports:
-      - "8088:8080"   # Temporal UI dashboard
-    networks:
-      - public-net
-      - internal-net
-    depends_on:
-      temporal-ns-register:
-        condition: service_completed_successfully
 
 # ==============================================================================
 # Network Topology: Public Ingress & Zero-Trust Isolated Internal Network

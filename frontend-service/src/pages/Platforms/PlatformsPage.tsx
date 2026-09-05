@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   Stack, Title, Text, Group, Button, Badge, Card, SimpleGrid, Modal,
   TextInput, Select, PasswordInput, NumberInput, Paper, ActionIcon, Tooltip,
-  SegmentedControl, Box, Alert, Loader, Divider,
+  SegmentedControl, Box, Alert, Loader, Divider, ThemeIcon,
 } from '@mantine/core'
 import {
   IconPlus, IconPlugConnected, IconCheck, IconX,
@@ -13,13 +13,13 @@ import { notifications } from '@mantine/notifications'
 import { metadataApi } from '../../api/client'
 
 const PLATFORM_OPTIONS = [
-  { value: 'SNOWFLAKE', label: 'Snowflake', icon: IconCloud, color: '#0284c7' },
-  { value: 'REDSHIFT', label: 'AWS Redshift', icon: IconBrandAws, color: '#ea580c' },
-  { value: 'DATABRICKS', label: 'Databricks', icon: IconServer, color: '#ff3600' },
-  { value: 'BIGQUERY', label: 'Google BigQuery', icon: IconBrandGoogle, color: '#4285f4' },
-  { value: 'POSTGRESQL', label: 'PostgreSQL', icon: IconDatabase, color: '#336791' },
-  { value: 'TRINO', label: 'Trino / Starburst', icon: IconServer, color: '#dd0031' },
-  { value: 'CUSTOM_JDBC', label: 'Custom Connector', icon: IconPlugConnected, color: '#4f46e5' },
+  { value: 'SNOWFLAKE', label: 'Snowflake', icon: IconCloud, color: 'blue' },
+  { value: 'REDSHIFT', label: 'AWS Redshift', icon: IconBrandAws, color: 'orange' },
+  { value: 'DATABRICKS', label: 'Databricks', icon: IconServer, color: 'red' },
+  { value: 'BIGQUERY', label: 'Google BigQuery', icon: IconBrandGoogle, color: 'blue' },
+  { value: 'POSTGRESQL', label: 'PostgreSQL', icon: IconDatabase, color: 'cyan' },
+  { value: 'TRINO', label: 'Trino / Starburst', icon: IconServer, color: 'pink' },
+  { value: 'CUSTOM_JDBC', label: 'Custom Connector', icon: IconPlugConnected, color: 'indigo' },
 ]
 
 function IconDatabase(props: any) {
@@ -62,11 +62,67 @@ export default function PlatformsPage() {
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
   const drivers   = useQuery({ queryKey: ['drivers'], queryFn: () => metadataApi.drivers() })
 
+  const [syncingPlatformId, setSyncingPlatformId] = useState<number | null>(null)
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => metadataApi.deletePlatform(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['platforms'] })
       notifications.show({ message: 'Platform disconnected', color: 'orange' })
+    },
+  })
+
+  const syncPlatformMutation = useMutation({
+    mutationFn: (platformId: number) => metadataApi.syncPlatform(platformId),
+    onSuccess: (res: any) => {
+      const pName = res.data?.platform_name || 'Platform'
+      notifications.show({
+        title: 'Metadata Sync Dispatched ⚡',
+        message: `Task dispatched to Celery worker to introspect schemas for ${pName}.`,
+        color: 'teal',
+        icon: <IconCheck />,
+      })
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['platforms'] })
+        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
+        queryClient.invalidateQueries({ queryKey: ['databases'] })
+      }, 1500)
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Sync Dispatch Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        color: 'red',
+        icon: <IconX />,
+      })
+    },
+    onSettled: () => {
+      setSyncingPlatformId(null)
+    },
+  })
+
+  const syncAllMutation = useMutation({
+    mutationFn: () => metadataApi.syncAllPlatforms(),
+    onSuccess: () => {
+      notifications.show({
+        title: 'Full Metadata Sync Dispatched ⚡',
+        message: 'Celery worker is now introspecting metadata across all active cloud data platforms.',
+        color: 'teal',
+        icon: <IconCheck />,
+      })
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['platforms'] })
+        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
+        queryClient.invalidateQueries({ queryKey: ['databases'] })
+      }, 1500)
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Sync Dispatch Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        color: 'red',
+        icon: <IconX />,
+      })
     },
   })
 
@@ -193,6 +249,18 @@ export default function PlatformsPage() {
     })
 
     setTestingPlatformId(null)
+  }
+
+  const handleSyncPlatform = (p: any) => {
+    setSyncingPlatformId(p.platform_id)
+    notifications.show({
+      id: `manual-sync-${p.platform_id}`,
+      loading: true,
+      title: 'Dispatching Metadata Sync',
+      message: `Triggering introspection task for ${p.platform_name}...`,
+      autoClose: 3000,
+    })
+    syncPlatformMutation.mutate(p.platform_id)
   }
 
   const resetForm = () => {
@@ -404,7 +472,7 @@ export default function PlatformsPage() {
   return (
     <Stack gap="lg">
       {/* Header */}
-      <Group justify="space-between" align="flex-start">
+      <Group justify="space-between" align="flex-start" wrap="wrap">
         <Box>
           <Group gap="xs">
             <Title order={2}>Data Platform Connections</Title>
@@ -414,9 +482,21 @@ export default function PlatformsPage() {
             Onboard, authenticate, test connectivity, and sync database schemas across Snowflake, Redshift, Databricks, BigQuery, PostgreSQL, and Trino.
           </Text>
         </Box>
-        <Button leftSection={<IconPlus size={16} />} color="indigo" radius="md" onClick={handleOpenCreate}>
-          Onboard Data Platform
-        </Button>
+        <Group gap="xs">
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            variant="light"
+            color="primary"
+            radius="md"
+            loading={syncAllMutation.isPending}
+            onClick={() => syncAllMutation.mutate()}
+          >
+            Sync All Platforms
+          </Button>
+          <Button leftSection={<IconPlus size={16} />} color="indigo" radius="md" onClick={handleOpenCreate}>
+            Onboard Data Platform
+          </Button>
+        </Group>
       </Group>
 
       {/* Grid of Platform Connections */}
@@ -426,22 +506,12 @@ export default function PlatformsPage() {
           const IconComp = opt.icon
 
           return (
-            <Paper key={p.platform_id} p="lg" radius="md" withBorder style={{ position: 'relative' }}>
+            <Paper key={p.platform_id} p="lg" radius="md" withBorder className="enterprise-card" style={{ position: 'relative' }}>
               <Group justify="space-between" align="flex-start" mb="sm">
                 <Group gap="sm">
-                  <Box
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 8,
-                      background: 'var(--mantine-color-indigo-light)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <IconComp size={22} color={opt.color} />
-                  </Box>
+                  <ThemeIcon size={40} radius="md" variant="light" color={opt.color}>
+                    <IconComp size={22} />
+                  </ThemeIcon>
                   <Box>
                     <Text fw={700} size="md">{p.platform_name}</Text>
                     <Badge size="xs" color="indigo" variant="outline">
@@ -474,17 +544,29 @@ export default function PlatformsPage() {
                 </Text>
               </Text>
 
-              <Group justify="space-between" mt="md">
-                <Button
-                  size="xs"
-                  variant="light"
-                  color="indigo"
-                  leftSection={testingPlatformId === p.platform_id ? <Loader size={12} /> : <IconPlugConnected size={14} />}
-                  loading={testingPlatformId === p.platform_id}
-                  onClick={() => handleQuickTest(p)}
-                >
-                  Test Connection
-                </Button>
+              <Group justify="space-between" mt="md" wrap="wrap" gap="xs">
+                <Group gap="xs">
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="indigo"
+                    leftSection={testingPlatformId === p.platform_id ? <Loader size={12} /> : <IconPlugConnected size={14} />}
+                    loading={testingPlatformId === p.platform_id}
+                    onClick={() => handleQuickTest(p)}
+                  >
+                    Test Connection
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    color="primary"
+                    leftSection={syncingPlatformId === p.platform_id ? <Loader size={12} /> : <IconRefresh size={14} />}
+                    loading={syncingPlatformId === p.platform_id}
+                    onClick={() => handleSyncPlatform(p)}
+                  >
+                    Sync Metadata
+                  </Button>
+                </Group>
                 <Group gap={6}>
                   <Tooltip label="Edit Connection Credentials">
                     <ActionIcon variant="subtle" color="blue" onClick={() => handleEdit(p)}>

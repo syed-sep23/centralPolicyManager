@@ -169,3 +169,27 @@ CREATE TABLE IF NOT EXISTS metadata_tag_rules (
     is_active           BOOLEAN NOT NULL DEFAULT TRUE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ─── Celery Task Execution History (Beat Cron & Worker Runs) ─────────────────
+CREATE TABLE IF NOT EXISTS celery_task_history (
+    id                  SERIAL PRIMARY KEY,
+    task_id             VARCHAR(255) NOT NULL,
+    task_name           VARCHAR(255) NOT NULL,
+    task_type           VARCHAR(50)  NOT NULL DEFAULT 'CRON_BEAT'
+                        CHECK (task_type IN ('CRON_BEAT', 'POLICY_DEPLOYMENT', 'MANUAL_SYNC')),
+    platform_code       VARCHAR(50),
+    status              VARCHAR(30)  NOT NULL DEFAULT 'PENDING'
+                        CHECK (status IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILURE')),
+    started_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    completed_at        TIMESTAMPTZ,
+    duration_ms         INTEGER,
+    tables_synced       INTEGER      DEFAULT 0,
+    columns_synced      INTEGER      DEFAULT 0,
+    result_summary      TEXT,
+    error_message       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_celery_task_history_type    ON celery_task_history(task_type);
+CREATE INDEX IF NOT EXISTS idx_celery_task_history_started ON celery_task_history(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_celery_task_history_status  ON celery_task_history(status);
+

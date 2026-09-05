@@ -76,8 +76,19 @@ export const deploymentsApi = {
     api.post('/deployments', data),
   trigger: (policyId: number, versionId: number) =>
     api.post('/deployments', { policy_id: policyId, version_id: versionId }),
+  getStreamUrl: (eventId: string) =>
+    `/api/v1/deployments/stream/${eventId}`,
 }
 export const deploymentApi = deploymentsApi
+
+// ─── Celery Tasks & Beat Cron History ─────────────────────────────────────────
+export const tasksApi = {
+  listBeatHistory: (params?: { task_type?: string; limit?: number }) =>
+    api.get('/deployments/tasks/history', { params }),
+  triggerSyncNow: (platformCodes?: string[]) =>
+    api.post('/deployments/tasks/sync-now', null, { params: { platform_codes: platformCodes } }),
+}
+
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 export const metadataApi = {
@@ -119,6 +130,8 @@ export const metadataApi = {
   },
   testConnection:   (data: any) => metadataApi.testConnectionDirect(data),
   deletePlatform:   (id: number) => api.delete(`/metadata/platforms/${id}`),
+  syncPlatform:     (id: number) => api.post(`/metadata/platforms/${id}/sync`),
+  syncAllPlatforms: () => api.post('/metadata/platforms/sync-all'),
   databases:        (platformId: number) => api.get(`/metadata/platforms/${platformId}/databases`),
   schemas:          (dbId: number) => api.get(`/metadata/databases/${dbId}/schemas`),
   tables:           (schemaId: number) => api.get(`/metadata/schemas/${schemaId}/tables`),

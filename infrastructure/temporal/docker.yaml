@@ -1,7 +1,0 @@
-limiters:
-  - isGlobal: true
-    key: |
-      type == "action"
-    ratePerInterval: 0
-    interval: 0s
-    maxBurst: 1000

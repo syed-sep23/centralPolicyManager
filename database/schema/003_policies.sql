@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS policy_version_targets (
     platform_id         INTEGER NOT NULL REFERENCES metadata_platforms(platform_id),
     deployment_status   VARCHAR(30) NOT NULL DEFAULT 'PENDING'
                         CHECK (deployment_status IN ('PENDING','IN_PROGRESS','SUCCESS','FAILED','ROLLED_BACK')),
-    temporal_workflow_id VARCHAR(255),
+    celery_task_id      VARCHAR(255),
     deployed_at         TIMESTAMPTZ,
     error_message       TEXT,
     UNIQUE(version_id, platform_id)

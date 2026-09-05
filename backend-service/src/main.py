@@ -6,9 +6,6 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from temporalio.client import Client
-from temporalio.worker import Worker
-
 from api.v1 import (
     auth,
     conditions,
@@ -27,41 +24,10 @@ from core.auth import configure_auth
 from core.config import settings
 from core.logging import configure_logging
 from db.session import Base, engine
-from workflows.deployment_workflow import (
-    PolicyDeploymentWorkflow,
-    compile_policy_activity,
-    deploy_to_platform_activity,
-)
-from workflows.metadata_sync_workflow import (
-    MetadataSyncCronWorkflow,
-    sync_platform_metadata_activity,
-)
+
 
 configure_logging()
 log = structlog.get_logger()
-
-
-async def run_temporal_worker():
-    """Background task running Temporal worker listening on policy-deployment task queue."""
-    try:
-        log.info("temporal_worker.connecting", host=settings.TEMPORAL_HOST)
-        client = await Client.connect(settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE)
-        worker = Worker(
-            client,
-            task_queue=settings.TEMPORAL_TASK_QUEUE,
-            workflows=[PolicyDeploymentWorkflow, MetadataSyncCronWorkflow],
-            activities=[
-                compile_policy_activity,
-                deploy_to_platform_activity,
-                sync_platform_metadata_activity,
-            ],
-        )
-        log.info("temporal_worker.started", task_queue=settings.TEMPORAL_TASK_QUEUE)
-        await worker.run()
-    except asyncio.CancelledError:
-        log.info("temporal_worker.stopped")
-    except Exception as e:
-        log.warning("temporal_worker.error", error=str(e))
 
 
 @asynccontextmanager
@@ -74,11 +40,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    worker_task = asyncio.create_task(run_temporal_worker())
     yield
-    worker_task.cancel()
     log.info("backend_service.shutdown")
     await engine.dispose()
+
 
 
 def create_app() -> FastAPI:

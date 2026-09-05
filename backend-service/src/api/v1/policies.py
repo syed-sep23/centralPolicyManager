@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.v1.deployments import execute_policy_deployment
+from api.v1.deployments import DeployRequest, trigger_policy_deployment
 from core.auth import CurrentUser, get_current_user, require_roles
 from db.session import get_db
 from schemas.schemas import (
@@ -81,6 +81,7 @@ async def update_policy(
     return policy
 
 
+
 @router.post("/{policy_id}/submit", response_model=PolicyRead)
 async def submit_policy(
     policy_id: int,
@@ -98,11 +99,23 @@ async def submit_policy(
     if not version_id and policy.versions:
         version_id = policy.versions[0].version_id
 
+    event_id = None
+    stream_url = None
+    celery_task_id = None
     if version_id:
-        await execute_policy_deployment(policy_id, version_id, None, db)
+        deploy_res = await trigger_policy_deployment(
+            DeployRequest(policy_id=policy_id, version_id=version_id), db
+        )
+        event_id = deploy_res.event_id
+        stream_url = deploy_res.stream_url
+        celery_task_id = deploy_res.celery_task_id
 
     policy = await svc.get_policy_detail(policy_id)
-    return policy
+    policy_dict = PolicyRead.model_validate(policy).model_dump()
+    policy_dict["event_id"] = event_id
+    policy_dict["stream_url"] = stream_url
+    policy_dict["celery_task_id"] = celery_task_id
+    return PolicyRead(**policy_dict)
 
 
 @router.delete("/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)

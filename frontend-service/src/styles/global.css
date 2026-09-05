@@ -1,4 +1,5 @@
-/* ─── Mantine Minimal Theme Global Styles ─────────────────────────────────── */
+/* ─── Enterprise Design System: Central Entitlement Service ────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -6,6 +7,89 @@
   --sidebar-width: 240px;
   --header-height: 52px;
   --transition-fast: 120ms ease;
+  --transition-smooth: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Light Mode Tokens (Crisp, High-Contrast, Minimalist Enterprise) ─────── */
+[data-mantine-color-scheme="light"] {
+  --mantine-color-body: #f8fafc;
+  --app-bg: #f8fafc;
+  --surface-bg: #ffffff;
+  --surface-bg-subtle: #f1f5f9;
+  --surface-bg-alt: #f8fafc;
+  --surface-border: #e2e8f0;
+  --surface-border-subtle: #edf2f7;
+  --surface-border-strong: #cbd5e1;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-dimmed: #64748b;
+  --text-muted: #94a3b8;
+
+  --card-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --card-shadow-hover: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --card-shadow-elevated: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+
+  --table-header-bg: #f8fafc;
+  --table-header-text: #475569;
+  --table-border: #e2e8f0;
+  --table-row-hover: #f1f5f9;
+  --table-row-selected: #eef2ff;
+
+  --banner-bg: linear-gradient(135deg, rgba(79, 70, 229, 0.04) 0%, rgba(6, 182, 212, 0.04) 100%);
+  --banner-border: #c7d2fe;
+
+  --code-bg: var(--mantine-color-gray-1);
+  --code-border: var(--mantine-color-gray-3);
+  --code-text: var(--mantine-color-gray-9);
+
+  --nav-active-bg: #eef2ff;
+  --nav-active-text: #4338ca;
+  --nav-active-border: #6366f1;
+
+  --kpi-box-bg: #ffffff;
+  --kpi-icon-bg: #f1f5f9;
+}
+
+/* ─── Dark Mode Tokens (Deep Space Slate, Sleek, Glowing Accents) ─────────── */
+[data-mantine-color-scheme="dark"] {
+  --mantine-color-body: #090d16;
+  --app-bg: #090d16;
+  --surface-bg: #0f172a;
+  --surface-bg-subtle: #1e293b;
+  --surface-bg-alt: #131d31;
+  --surface-border: #1e293b;
+  --surface-border-subtle: rgba(255, 255, 255, 0.06);
+  --surface-border-strong: rgba(255, 255, 255, 0.12);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-dimmed: #94a3b8;
+  --text-muted: #64748b;
+
+  --card-shadow: none;
+  --card-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --card-shadow-elevated: 0 10px 25px rgba(0, 0, 0, 0.5);
+
+  --table-header-bg: #131d31;
+  --table-header-text: #94a3b8;
+  --table-border: #1e293b;
+  --table-row-hover: rgba(255, 255, 255, 0.035);
+  --table-row-selected: rgba(79, 70, 229, 0.15);
+
+  --banner-bg: linear-gradient(135deg, rgba(79, 70, 229, 0.12) 0%, rgba(6, 182, 212, 0.08) 100%);
+  --banner-border: rgba(99, 102, 241, 0.25);
+
+  --code-bg: var(--mantine-color-dark-6);
+  --code-border: var(--mantine-color-dark-4);
+  --code-text: var(--mantine-color-dark-0);
+
+  --nav-active-bg: rgba(79, 70, 229, 0.15);
+  --nav-active-text: #a5b4fc;
+  --nav-active-border: #818cf8;
+
+  --kpi-box-bg: #0f172a;
+  --kpi-icon-bg: #1e293b;
 }
 
 *, *::before, *::after {
@@ -20,102 +104,194 @@ html, body, #root {
 
 body {
   font-family: var(--font-sans);
+  background-color: var(--app-bg);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Minimalist Scrollbar ────────────────────────────────────────────────── */
+/* ─── Minimalist Precision Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--mantine-color-default-border);
-  border-radius: 3px;
+  background: var(--surface-border);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--mantine-color-dimmed);
+  background: var(--text-muted);
+}
+
+/* ─── AppShell Overrides ─────────────────────────────────────────────────── */
+.mantine-AppShell-root {
+  background-color: var(--app-bg) !important;
+}
+
+.mantine-AppShell-header {
+  background-color: var(--surface-bg) !important;
+  border-bottom: 1px solid var(--surface-border) !important;
+  backdrop-filter: blur(8px);
+}
+
+.mantine-AppShell-navbar {
+  background-color: var(--surface-bg) !important;
+  border-right: 1px solid var(--surface-border) !important;
+}
+
+.mantine-AppShell-main {
+  background-color: var(--app-bg) !important;
+  min-height: calc(100vh - var(--header-height));
+}
+
+/* ─── Enterprise Card & Surface Classes ───────────────────────────────────── */
+.glass-card,
+.enterprise-card {
+  background: var(--surface-bg) !important;
+  border: 1px solid var(--surface-border) !important;
+  box-shadow: var(--card-shadow) !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.glass-card:hover,
+.enterprise-card:hover {
+  border-color: var(--surface-border-strong) !important;
+}
+
+.kpi-card {
+  background: var(--surface-bg) !important;
+  border: 1px solid var(--surface-border) !important;
+  box-shadow: var(--card-shadow) !important;
+  border-radius: 8px;
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), border-color var(--transition-smooth);
+}
+
+.kpi-card:hover {
+  box-shadow: var(--card-shadow-hover) !important;
+  border-color: var(--surface-border-strong) !important;
+}
+
+.banner-panel {
+  background: var(--banner-bg) !important;
+  border: 1px solid var(--banner-border) !important;
+  border-radius: 8px;
+}
+
+.explorer-sidebar {
+  background: var(--surface-bg) !important;
+  border: 1px solid var(--surface-border) !important;
+  box-shadow: var(--card-shadow) !important;
+}
+
+/* ─── Enterprise Data Tables ─────────────────────────────────────────────── */
+.mantine-Table-table {
+  font-size: 0.8125rem !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border: 1px solid var(--table-border) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background: var(--surface-bg) !important;
+}
+
+.mantine-Table-thead {
+  background-color: var(--table-header-bg) !important;
+}
+
+.mantine-Table-th {
+  font-size: 0.6875rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: var(--table-header-text) !important;
+  border-bottom: 1px solid var(--table-border) !important;
+  padding: 8px 12px !important;
+  white-space: nowrap !important;
+}
+
+.mantine-Table-td {
+  padding: 8px 12px !important;
+  border-bottom: 1px solid var(--surface-border-subtle) !important;
+  color: var(--text-primary) !important;
+}
+
+.mantine-Table-tr:last-child .mantine-Table-td {
+  border-bottom: none !important;
+}
+
+.mantine-Table-tr:hover {
+  background-color: var(--table-row-hover) !important;
+}
+
+/* ─── Form Inputs & Controls ──────────────────────────────────────────────── */
+.mantine-TextInput-input,
+.mantine-Select-input,
+.mantine-NumberInput-input,
+.mantine-Textarea-input {
+  background-color: var(--surface-bg) !important;
+  border-color: var(--surface-border-strong) !important;
+  color: var(--text-primary) !important;
+  font-size: 0.8125rem !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.mantine-TextInput-input:focus,
+.mantine-Select-input:focus,
+.mantine-NumberInput-input:focus,
+.mantine-Textarea-input:focus {
+  border-color: var(--mantine-color-indigo-6) !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+}
+
+/* ─── Tabs Styling ────────────────────────────────────────────────────────── */
+.mantine-Tabs-tab {
+  font-weight: 500 !important;
+  font-size: 0.8125rem !important;
+  color: var(--text-secondary) !important;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.mantine-Tabs-tab:hover {
+  color: var(--text-primary) !important;
+  background-color: var(--surface-bg-subtle) !important;
+}
+
+.mantine-Tabs-tab[data-active] {
+  color: var(--mantine-color-indigo-6) !important;
+  border-color: var(--mantine-color-indigo-6) !important;
+  font-weight: 600 !important;
+}
+
+/* ─── Terminal & Code Containers ──────────────────────────────────────────── */
+.code-block {
+  font-family: var(--font-mono) !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.55 !important;
+  background-color: var(--code-bg) !important;
+  color: var(--code-text) !important;
+  border: 1px solid var(--code-border) !important;
+  border-radius: var(--mantine-radius-default, 0.5rem) !important;
+  padding: 12px 14px !important;
+  overflow-x: auto !important;
 }
 
 /* ─── Clean Typography & Section Helpers ───────────────────────────────────── */
 .page-header {
-  padding-bottom: var(--mantine-spacing-sm);
-  border-bottom: 1px solid var(--mantine-color-default-border);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--surface-border);
 }
 
-.gradient-text {
-  font-weight: 600;
-  letter-spacing: -0.01em;
+.text-dimmed-enterprise {
+  color: var(--text-dimmed) !important;
 }
 
-/* ─── Minimalist Surface / Card ────────────────────────────────────────────── */
-.glass-card {
-  border: 1px solid var(--mantine-color-default-border) !important;
-  background: var(--mantine-color-body) !important;
+.text-secondary-enterprise {
+  color: var(--text-secondary) !important;
 }
 
-.hero-gradient {
-  background: transparent !important;
-  border-bottom: 1px solid var(--mantine-color-default-border);
-}
-
-/* ─── Code / Monospace Container (Always Solid Dark Background) ───────────── */
-.code-block,
-pre.mantine-Code-root,
-code.mantine-Code-root[data-block],
-.mantine-Code-root[data-block] {
-  font-family: var(--font-mono) !important;
-  font-size: 0.8125rem !important;
-  line-height: 1.55 !important;
-  background-color: #0d1117 !important;
-  color: #e6edf3 !important;
-  border: 1px solid #30363d !important;
-  border-radius: var(--mantine-radius-sm) !important;
-  padding: 12px 16px !important;
-  overflow-x: auto !important;
-}
-
-[data-mantine-color-scheme="light"] .code-block,
-[data-mantine-color-scheme="light"] .mantine-Code-root[data-block] {
-  background-color: #0d1117 !important;
-  color: #e6edf3 !important;
-  border: 1px solid #30363d !important;
-}
-
-/* ─── Status indicator badges ─────────────────────────────────────────────── */
-.status-draft        { --badge-color: var(--mantine-color-gray-6); }
-.status-validated    { --badge-color: var(--mantine-color-teal-6); }
-.status-enforced     { --badge-color: var(--mantine-color-indigo-6); }
-.status-deploying    { --badge-color: var(--mantine-color-yellow-6); }
-.status-failed       { --badge-color: var(--mantine-color-red-6); }
-.status-deprecated   { --badge-color: var(--mantine-color-dark-4); }
-
-/* ─── Smooth subtle transitions ──────────────────────────────────────────── */
-.fade-in-up {
-  animation: fadeIn 0.2s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ─── Minimal Table Styling ──────────────────────────────────────────────── */
-.mantine-Table-table {
-  font-size: 0.875rem;
-}
-
-.mantine-Table-th {
-  font-weight: 600;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--mantine-color-dimmed);
-}
-
-.mantine-Table-tr:hover {
-  background: var(--mantine-color-default-hover) !important;
+.badge-outline-enterprise {
+  border: 1px solid currentColor !important;
 }

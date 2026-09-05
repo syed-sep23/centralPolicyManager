@@ -2,17 +2,17 @@
 # Central Entitlement Service (CES) - Docker Compose (Standalone / Self-Contained)
 # ==============================================================================
 #
-# STANDALONE VERSION: All Temporal setup scripts are embedded inline.
-# No external .sh files required — everything runs from this single YAML file.
+# STANDALONE VERSION: Shared PostgreSQL, Redis, Celery Worker, and Celery Beat.
+# No external setup scripts required — everything runs from this single YAML file.
 #
 # Boot Sequence:
-#   1. PostgreSQL            -> healthcheck passes
-#   2. temporal-db-init      -> creates temporal databases and user (inline)
-#   3. temporal-schema-setup -> applies schema migrations (inline)
-#   4. temporal              -> starts temporalio/server:1.24
-#   5. temporal-ns-register  -> registers default namespace (inline)
-#   6. temporal-ui           -> Temporal Web UI
-#   7. backend-service       -> CES application services
+#   1. PostgreSQL       -> healthcheck passes (ces_db)
+#   2. Redis            -> healthcheck passes (broker & pub/sub)
+#   3. OPA & Connectors -> healthchecks pass (OPA, Snowflake, Redshift)
+#   4. Backend Service  -> CES application services & SSE streaming
+#   5. Celery Worker    -> policy push execution to cloud engines
+#   6. Celery Beat      -> scheduled 1-hour catalog metadata sync
+#   7. Frontend & Nginx -> UI control plane & unified gateway
 # ==============================================================================
 
 x-common-env: &common-env
@@ -70,191 +70,71 @@ services:
       - "8181:8181"
     networks:
       - ces-net
+    restart: unless-stopped  # =============================================
+  # Redis Message Broker & Pub/Sub
+  # =============================================
+  redis:
+    image: redis:7-alpine
+    container_name: ces-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ces-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   # =============================================
-  # Temporal Workflow Infrastructure (Production)
+  # Celery Worker Service
   # =============================================
-  #
-  # All init scripts are embedded inline below.
-  # No external script files needed.
-  # =============================================
-
-  # --- Step 1: Create Temporal databases and user (inline) ---
-  temporal-db-init:
-    image: postgres:16-alpine
-    container_name: ces-temporal-db-init
+  celery-worker:
+    build:
+      context: .
+      dockerfile: backend-service/Dockerfile
+    container_name: ces-celery-worker
+    command: ["celery", "-A", "src.celery_app.celery", "worker", "--loglevel=info", "-c", "4"]
     environment:
-      PGPASSWORD: ${PG_PASSWORD:-ces_secret_2024}
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -e
-        echo "=============================================="
-        echo "  Temporal Database Initialization"
-        echo "=============================================="
-        echo "[1/5] Creating temporal_user role..."
-        psql -h postgresql -p 5432 -U ces_user -d ces_db \
-          -c "CREATE ROLE temporal_user WITH LOGIN PASSWORD 'temporal_secret_2024';" \
-          2>/dev/null && echo "  -> Created" || echo "  -> Already exists (skipped)"
-        echo "[2/5] Creating database: temporal"
-        psql -h postgresql -p 5432 -U ces_user -d ces_db \
-          -c "CREATE DATABASE temporal OWNER temporal_user;" \
-          2>/dev/null && echo "  -> Created" || echo "  -> Already exists (skipped)"
-        echo "[3/5] Creating database: temporal_visibility"
-        psql -h postgresql -p 5432 -U ces_user -d ces_db \
-          -c "CREATE DATABASE temporal_visibility OWNER temporal_user;" \
-          2>/dev/null && echo "  -> Created" || echo "  -> Already exists (skipped)"
-        echo "[4/5] Granting privileges on temporal"
-        psql -h postgresql -p 5432 -U ces_user -d temporal \
-          -c "GRANT ALL ON SCHEMA public TO temporal_user;"
-        echo "[5/5] Granting privileges on temporal_visibility"
-        psql -h postgresql -p 5432 -U ces_user -d temporal_visibility \
-          -c "GRANT ALL ON SCHEMA public TO temporal_user;"
-        echo "=============================================="
-        echo "  Temporal databases ready"
-        echo "=============================================="
+      <<: *common-env
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      SNOWFLAKE_CONNECTOR_URL: http://snowflake-connector:8006
+      REDSHIFT_CONNECTOR_URL: http://redshift-connector:8007
     networks:
       - ces-net
     depends_on:
       postgresql:
         condition: service_healthy
-    restart: "no"
-
-  # --- Step 2: Apply Temporal schema migrations (inline) ---
-  temporal-schema-setup:
-    image: temporalio/admin-tools:1.30.1
-    container_name: ces-temporal-schema-setup
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -e
-        echo "=============================================="
-        echo "  Temporal Schema Migration"
-        echo "=============================================="
-        echo "[1/4] Initializing 'temporal' base schema..."
-        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
-          -u temporal_user --pw temporal_secret_2024 \
-          --db temporal setup-schema -v 0.0 \
-          2>/dev/null && echo "  -> Done" || echo "  -> Already initialized (skipped)"
-        echo "[2/4] Applying 'temporal' versioned migrations..."
-        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
-          -u temporal_user --pw temporal_secret_2024 \
-          --db temporal update-schema \
-          -d /etc/temporal/schema/postgresql/v12/temporal/versioned
-        echo "  -> Migrations applied"
-        echo "[3/4] Initializing 'temporal_visibility' base schema..."
-        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
-          -u temporal_user --pw temporal_secret_2024 \
-          --db temporal_visibility setup-schema -v 0.0 \
-          2>/dev/null && echo "  -> Done" || echo "  -> Already initialized (skipped)"
-        echo "[4/4] Applying 'temporal_visibility' versioned migrations..."
-        temporal-sql-tool --plugin postgres12 --ep postgresql -p 5432 \
-          -u temporal_user --pw temporal_secret_2024 \
-          --db temporal_visibility update-schema \
-          -d /etc/temporal/schema/postgresql/v12/visibility/versioned
-        echo "  -> Migrations applied"
-        echo "=============================================="
-        echo "  Schema migration complete"
-        echo "=============================================="
-    networks:
-      - ces-net
-    depends_on:
-      temporal-db-init:
-        condition: service_completed_successfully
-    restart: "no"
-
-  # --- Step 3: Temporal Server (Production) ---
-  # NUM_HISTORY_SHARDS=4 is suitable for dev/staging.
-  # For production workloads, increase to 128-512.
-  # WARNING: This value CANNOT be changed after initial setup.
-  temporal:
-    image: temporalio/server:1.29.1
-    container_name: ces-temporal
-    environment:
-      DB: postgres12
-      DB_PORT: "5432"
-      POSTGRES_USER: ${TEMPORAL_PG_USER:-temporal_user}
-      POSTGRES_PWD: ${TEMPORAL_PG_PASSWORD:-temporal_secret_2024}
-      POSTGRES_SEEDS: postgresql
-      DBNAME: temporal
-      VISIBILITY_DBNAME: temporal_visibility
-      NUM_HISTORY_SHARDS: "4"
-      SERVICES: frontend,history,matching,worker
-      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/docker.yaml
-      LOG_LEVEL: info
-    volumes:
-      - ./infrastructure/temporal/docker.yaml:/etc/temporal/dynamicconfig/docker.yaml:ro
-    ports:
-      - "7233:7233"
-    networks:
-      - ces-net
-    depends_on:
-      temporal-schema-setup:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
-  # --- Step 4: Register Temporal namespace (inline) ---
-  temporal-ns-register:
-    image: temporalio/admin-tools:1.30.1
-    container_name: ces-temporal-ns-register
+  # =============================================
+  # Celery Beat Service (1-Hour Cron)
+  # =============================================
+  celery-beat:
+    build:
+      context: .
+      dockerfile: backend-service/Dockerfile
+    container_name: ces-celery-beat
+    command: ["celery", "-A", "src.celery_app.celery", "beat", "--loglevel=info"]
     environment:
-      TEMPORAL_CLI_ADDRESS: temporal:7233
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -e
-        echo "=============================================="
-        echo "  Temporal Namespace Registration"
-        echo "=============================================="
-        echo "[1/2] Waiting for Temporal server..."
-        MAX_RETRIES=60
-        RETRY_COUNT=0
-        until temporal operator cluster health 2>/dev/null | grep -q SERVING; do
-          RETRY_COUNT=$$((RETRY_COUNT + 1))
-          if [ "$$RETRY_COUNT" -ge "$$MAX_RETRIES" ]; then
-            echo "ERROR: Temporal server not ready after $$MAX_RETRIES attempts"
-            exit 1
-          fi
-          echo "  Attempt $$RETRY_COUNT/$$MAX_RETRIES - retrying in 3s..."
-          sleep 3
-        done
-        echo "  -> Temporal server is SERVING"
-        echo "[2/2] Registering namespace: default"
-        temporal operator namespace describe --namespace default > /dev/null 2>&1 \
-          && echo "  -> Already exists (skipped)" \
-          || (temporal operator namespace create \
-                --namespace default \
-                --retention 72h \
-                --description "CES workflow namespace" \
-              && echo "  -> Registered successfully")
-        echo "=============================================="
-        echo "  Namespace registration complete"
-        echo "=============================================="
+      <<: *common-env
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      SNOWFLAKE_CONNECTOR_URL: http://snowflake-connector:8006
+      REDSHIFT_CONNECTOR_URL: http://redshift-connector:8007
     networks:
       - ces-net
     depends_on:
-      temporal:
-        condition: service_started
-    restart: "no"
-
-  # --- Temporal Web UI ---
-  temporal-ui:
-    image: temporalio/ui:2.43.3
-    container_name: ces-temporal-ui
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:3000
-    ports:
-      - "8088:8080"   # Temporal UI -> http://localhost:8088
-    networks:
-      - ces-net
-    depends_on:
-      temporal-ns-register:
-        condition: service_completed_successfully
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   # =============================================
@@ -271,20 +151,21 @@ services:
       - "8000:8000"   # Core API -> http://localhost:8000
     environment:
       <<: *common-env
-      OPA_URL: ${OPA_URL}
-      TEMPORAL_HOST: ${TEMPORAL_HOST}
-      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
-      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-policy-deployment}
-      SNOWFLAKE_CONNECTOR_URL: ${SNOWFLAKE_CONNECTOR_URL}
-      REDSHIFT_CONNECTOR_URL: ${REDSHIFT_CONNECTOR_URL}
+      OPA_URL: ${OPA_URL:-http://opa:8181}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      SNOWFLAKE_CONNECTOR_URL: ${SNOWFLAKE_CONNECTOR_URL:-http://snowflake-connector:8006}
+      REDSHIFT_CONNECTOR_URL: ${REDSHIFT_CONNECTOR_URL:-http://redshift-connector:8007}
     <<: *service-defaults
     depends_on:
       postgresql:
         condition: service_healthy
       opa:
         condition: service_started
-      temporal-ns-register:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
 
   # --- Snowflake Connector ---
   snowflake-connector:

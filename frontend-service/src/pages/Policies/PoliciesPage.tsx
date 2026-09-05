@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Stack, Group, Title, Button, Table, Badge, Text, TextInput,
   ActionIcon, Tooltip, Select, Box, Skeleton, Menu,
@@ -64,6 +64,21 @@ export default function PoliciesPage() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
+  // SSE EventSource tracking and cleanup
+  const activeEsRef = useRef<EventSource | null>(null)
+  const closeActiveEs = () => {
+    if (activeEsRef.current) {
+      activeEsRef.current.close()
+      activeEsRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      closeActiveEs()
+    }
+  }, [])
+
   const { data, isLoading } = useQuery({
     queryKey: ['policies', page, statusFilter],
     queryFn: () => policiesApi.list({ page, size: 20, status: statusFilter ?? undefined }),
@@ -79,9 +94,53 @@ export default function PoliciesPage() {
 
   const submitMutation = useMutation({
     mutationFn: (id: number) => policiesApi.submit(id),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
+      const eventId = res?.data?.event_id
       queryClient.invalidateQueries({ queryKey: ['policies'] })
-      notifications.show({ title: 'OPA Gate Passed ✅', message: 'OPA Decision: Positive. Temporal deployment started.', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['policies-deployments'] })
+      notifications.show({
+        title: 'OPA Gate Passed ✅',
+        message: 'OPA Decision: Positive. Celery worker is deploying policy to platforms...',
+        color: 'teal',
+      })
+
+      if (eventId) {
+        closeActiveEs()
+        const es = new EventSource(`/api/v1/deployments/stream/${eventId}`)
+        activeEsRef.current = es
+        es.addEventListener('deployment_update', (e: MessageEvent) => {
+          try {
+            const payload = JSON.parse(e.data)
+            if (payload.step === 'COMPLETED') {
+              closeActiveEs()
+              queryClient.invalidateQueries({ queryKey: ['policies'] })
+              queryClient.invalidateQueries({ queryKey: ['policies-deployments'] })
+              const taskInfo = payload.celery_task_id ? ` (Celery Task: ${payload.celery_task_id.slice(0, 8)})` : ''
+              notifications.show({
+                title: 'Policy Deployed Successfully 🚀',
+                message: payload.message || `Celery worker${taskInfo} pushed and enforced policy on Snowflake & Redshift!`,
+                color: 'teal',
+                autoClose: 8000,
+              })
+            } else if (payload.step === 'FAILED') {
+              closeActiveEs()
+              queryClient.invalidateQueries({ queryKey: ['policies'] })
+              queryClient.invalidateQueries({ queryKey: ['policies-deployments'] })
+              notifications.show({
+                title: 'Policy Deployment Failed ❌',
+                message: payload.message || 'Celery worker encountered an error deploying policy to data platforms.',
+                color: 'red',
+                autoClose: 10000,
+              })
+            }
+          } catch (err) {
+            console.error('SSE event error', err)
+          }
+        })
+        es.addEventListener('timeout', () => closeActiveEs())
+        es.addEventListener('error', () => closeActiveEs())
+        es.onerror = () => closeActiveEs()
+      }
     },
     onError: (err: any) => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
@@ -114,7 +173,8 @@ export default function PoliciesPage() {
           leftSection={<IconPlus size={16} />}
           onClick={() => navigate('/policies/new')}
           id="create-policy-btn"
-          style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', border: 'none' }}
+          color="indigo"
+          variant="filled"
         >
           New Policy
         </Button>
@@ -142,9 +202,9 @@ export default function PoliciesPage() {
       </Group>
 
       {/* Table */}
-      <Box style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <Box style={{ borderRadius: 8, overflow: 'hidden' }}>
         <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
-          <Table.Thead style={{ background: 'rgba(255,255,255,0.03)' }}>
+          <Table.Thead>
             <Table.Tr>
               <Table.Th>Policy Name</Table.Th>
               <Table.Th>Code</Table.Th>
@@ -209,7 +269,7 @@ export default function PoliciesPage() {
                             {p.status === 'ENFORCED' ? 'Re-Deploy Policy' : 'Submit & Deploy'}
                           </Menu.Item>
                           <Menu.Item leftSection={<IconHistory size={14} />}
-                            onClick={() => navigate(`/policies/${p.policy_id}?tab=versions`)}>
+                            onClick={() => navigate(`/policies/${p.policy_id}/versions`)}>
                             Version History
                           </Menu.Item>
                           <Menu.Divider />

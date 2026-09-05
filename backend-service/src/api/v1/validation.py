@@ -288,7 +288,7 @@ async def get_opa_audit_logs(policy_id: int, db: AsyncSession = Depends(get_db))
             SELECT event_id, event_type, event_timestamp, actor_service, policy_id, policy_version_id, outcome, detail_text
             FROM audit_events
             WHERE policy_id = :p
-            ORDER BY event_timestamp DESC
+            ORDER BY event_timestamp DESC, event_id DESC
             LIMIT 50
         """),
                 {"p": policy_id},

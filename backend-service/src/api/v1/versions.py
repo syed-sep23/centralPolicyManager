@@ -39,7 +39,7 @@ async def list_versions(
             (
                 await db.execute(
                     text("""
-                SELECT pvt.platform_id, mp.platform_code, pvt.deployment_status, pvt.temporal_workflow_id, pvt.deployed_at
+                SELECT pvt.platform_id, mp.platform_code, pvt.deployment_status, pvt.celery_task_id, pvt.deployed_at
                 FROM policy_version_targets pvt
                 JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
                 WHERE pvt.version_id = :vid
@@ -82,7 +82,7 @@ async def get_version(
         (
             await db.execute(
                 text("""
-            SELECT pvt.platform_id, mp.platform_code, pvt.deployment_status, pvt.temporal_workflow_id, pvt.deployed_at
+            SELECT pvt.platform_id, mp.platform_code, pvt.deployment_status, pvt.celery_task_id, pvt.deployed_at
             FROM policy_version_targets pvt
             JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
             WHERE pvt.version_id = :vid

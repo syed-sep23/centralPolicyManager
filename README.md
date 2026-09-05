@@ -2,7 +2,7 @@
 
 ### Enterprise-Grade Cloud Data Access Governance, ABAC/PBAC & Multi-Engine Policy Compiler
 
-![Architecture: Microservices](https://img.shields.io/badge/Architecture-Distributed%20Microservices-blue.svg)![Engines: Snowflake & Redshift & OPA](https://img.shields.io/badge/Engines-Snowflake%20%7C%20Redshift%20%7C%20OPA-teal.svg)![Workflow: Temporal Orchestration](https://img.shields.io/badge/Orchestrator-Temporal%20Engine-orange.svg)\---
+![Architecture: Microservices](https://img.shields.io/badge/Architecture-Distributed%20Microservices-blue.svg)![Engines: Snowflake & Redshift & OPA](https://img.shields.io/badge/Engines-Snowflake%20%7C%20Redshift%20%7C%20OPA-teal.svg)![Workflow: Celery Distributed Orchestrator](https://img.shields.io/badge/Orchestrator-Celery%20Worker%20%26%20Beat-green.svg)---
 
 ## 1. Executive Summary & Business Value
 
@@ -24,7 +24,7 @@ Modern data estates span diverse cloud platforms—**Snowflake**, **Amazon Redsh
 
 ## 2. System Architecture
 
-CES is designed as a distributed, event-driven, microservices-based system orchestrated with **Temporal** workflows and verified with **Open Policy Agent (OPA)**.
+CES is designed as a distributed, event-driven, microservices-based system orchestrated with **Celery Worker** (long-running async policy compilation and cloud push) and **Celery Beat** (1-hour scheduled metadata catalog synchronization) backed by **Redis** and verified with **Open Policy Agent (OPA)**.
 
 ```mermaid
 flowchart TB
@@ -36,18 +36,19 @@ flowchart TB
 
     subgraph CorePlane["Central Control Plane"]
         API["CES Core Backend Service\n(FastAPI / Python 3.12 / AsyncPG)"]
-        DB[(PostgreSQL 16\nces_db Metadata & Policy AST)]
+        DB[(PostgreSQL 16\nces_db Shared Metadata & Policy AST)]
         OPA["Open Policy Agent (OPA)\n(Declarative Low-Latency Rego)"]
     end
 
-    subgraph Orchestration["Durable Workflow Orchestration"]
-        TEMPORAL["Temporal Server 1.24\n(Durable Execution Engine)"]
-        WORKER["CES Temporal Worker\n(Retry Policies, Rollbacks & Audits)"]
+    subgraph Orchestration["Distributed Task Orchestration"]
+        REDIS[("Redis 7 Alpine\n(Broker & Event Pub/Sub)")]
+        WORKER["CES Celery Worker\n(Policy Pushdown & Rollbacks)"]
+        BEAT["CES Celery Beat\n(1-Hour Scheduled Cron)"]
     end
 
     subgraph Connectors["Pluggable Platform Connectors"]
-        SF_CONN["Snowflake Connector (Port 8006)\nSnowflakePolicyCompiler\n(Tag-Based Masking & RAP)"]
-        RS_CONN["Redshift Connector (Port 8007)\nRedshiftPolicyCompiler\n(Native DDM & RLS)"]
+        SF_CONN["Snowflake Connector (Port 8006)\nSnowflakePolicyCompiler\n(Tag-Based Masking, RAP & Metadata)"]
+        RS_CONN["Redshift Connector (Port 8007)\nRedshiftPolicyCompiler\n(Native DDM, RLS & Metadata)"]
     end
 
     subgraph TargetClouds["Cloud Data Warehouses & Query Engines"]
@@ -56,20 +57,30 @@ flowchart TB
     end
 
     UI -->|REST / JSON| API
+    UI -->|Server-Sent Events (SSE)| API
     IdP -->|SCIM 2.0 Users & Groups| API
     CLI -->|REST / DDL Export| API
 
     API -->|Async ORM / SessionLocal| DB
     API -->|Synchronous In-Memory Rego| OPA
-    API -->|Trigger Deployment Workflow| TEMPORAL
+    API -->|Enqueue Policy Deploy| REDIS
+    API -.->|Listen Live Status SSE| REDIS
 
-    TEMPORAL --> WORKER
-    WORKER -->|Compile & Deploy| SF_CONN
-    WORKER -->|Compile & Deploy| RS_CONN
+    BEAT -->|1-Hour Scheduled Trigger| REDIS
+    REDIS -->|Consume Tasks| WORKER
+
+    WORKER -->|Apply DDL| SF_CONN
+    WORKER -->|Apply DDM & RLS| RS_CONN
+    WORKER -->|Fetch Platform Metadata| SF_CONN
+    WORKER -->|Fetch Platform Metadata| RS_CONN
+
+    WORKER -->|Persist Targets, Status & History| DB
+    WORKER -.->|Publish Immediate Event Updates| REDIS
 
     SF_CONN -->|Native Driver / SQL Execution| SNOWFLAKE
     RS_CONN -->|psycopg2 / Redshift Driver| REDSHIFT
 ```
+
 
 ---
 
@@ -241,8 +252,10 @@ erDiagram
 | `metadata_columns` | Governed catalog column schema definitions | `column_id`, `table_id`, `column_name`, `data_type` |
 | `metadata_tags` | Hierarchical taxonomy metadata tags | `tag_id`, `tag_name`, `full_path`, `parent_tag_id`, `tag_category` |
 | `metadata_tag_assignments` | Mappings binding tags to catalog columns/tables | `assignment_id`, `tag_id`, `column_id`, `confidence_score` |
+| `celery_task_history` | Audit log of Celery Beat scheduled & manual sync executions | `id`, `task_name`, `task_id`, `status`, `target_platforms`, `started_at`, `completed_at` |
 | `policies` | Central policy entity | `policy_id`, `policy_code`, `policy_name`, `enforce_mode`, `status` |
 | `policy_versions` | Immutable version history of policy specifications | `version_id`, `policy_id`, `version_number`, `is_current` |
+| `policy_version_targets` | Target platform deployment statuses & Celery task tracking | `target_id`, `version_id`, `platform_id`, `status`, `celery_task_id` |
 | `policy_rules` | Logical rules within a policy version | `rule_id`, `version_id`, `rule_type`, `effect` (`ALLOW`/`DENY`) |
 | `policy_rule_actions` | Actions executed (`MASK_COLUMN`, `FILTER_ROWS`, etc.) | `action_id`, `rule_id`, `action_type`, `mask_type`, `filter_column` |
 | `policy_rule_conditions` | Context & purpose evaluation conditions | `condition_id`, `rule_id`, `attribute_key`, `operator`, `compare_value` |
@@ -257,15 +270,16 @@ When deployed with Docker Compose, CES provisions the following coordinated serv
 
 | Container Name | Service | Technology | Gateway Route (Port 80) | Direct Port | Purpose |
 | --- | --- | --- | --- | --- | --- |
-| `ces-gateway` | Edge Gateway | Nginx Alpine | [**http://localhost:80**](http://localhost:80) | `:80` | Unified Ingress, Reverse Proxy & Security Headers |
-| `ces-frontend` | Control Plane UI | React 18 / Mantine / Vite / Node serve | [**http://localhost/**](http://localhost/) | Internal `:80` | DSPM Dashboard, Policy Studio, Identity & PBAC Studio |
-| `ces-backend-service` | Core API | FastAPI / Python 3.12 / AsyncPG | [**http://localhost/api/v1**](http://localhost/api/v1) & [**/docs**](http://localhost/docs) | `:8000` | REST API, Compiler Engine, SCIM Ingestion |
-| `ces-snowflake-connector` | Snowflake Agent | FastAPI / Snowflake-Python Driver | [**http://localhost/connectors/snowflake**](http://localhost/connectors/snowflake/health) | `:8006` | Native Snowflake dynamic masking & RAP compiler |
-| `ces-redshift-connector` | Redshift Agent | FastAPI / Redshift Connector / Psycopg2 | [**http://localhost/connectors/redshift**](http://localhost/connectors/redshift/health) | `:8007` | Native Redshift DDM & RLS compiler |
+| `ces-gateway` | Edge Gateway | Nginx Alpine | [**http://localhost:80**](http://localhost:80) | `:80` | Unified Ingress, Reverse Proxy, SSE streaming & Security Headers |
+| `ces-frontend` | Control Plane UI | React 18 / Mantine / Vite / Node serve | [**http://localhost/**](http://localhost/) | Internal `:80` | DSPM Dashboard, Policy Studio, Real-time Deployments & Beat History |
+| `ces-backend-service` | Core API | FastAPI / Python 3.12 / AsyncPG | [**http://localhost/api/v1**](http://localhost/api/v1) & [**/docs**](http://localhost/docs) | `:8000` | REST API, SSE Streaming Server, Compiler Engine, SCIM Ingestion |
+| `ces-snowflake-connector` | Snowflake Agent | FastAPI / Snowflake-Python Driver | [**http://localhost/connectors/snowflake**](http://localhost/connectors/snowflake/health) | `:8006` | Native Snowflake dynamic masking, RAP & metadata discovery |
+| `ces-redshift-connector` | Redshift Agent | FastAPI / Redshift Connector / Psycopg2 | [**http://localhost/connectors/redshift**](http://localhost/connectors/redshift/health) | `:8007` | Native Redshift DDM, RLS & metadata discovery |
 | `ces-opa` | Policy Evaluation Engine | Open Policy Agent | [**http://localhost/opa/v1/data**](http://localhost/opa/v1/data) | `:8181` | Declarative sub-millisecond Rego decision engine |
-| `ces-temporal-ui` | Workflow Dashboard | Temporal Web UI | [**http://localhost/temporal**](http://localhost/temporal) | `:8088` | Live visualization of policy deployment runs |
-| `ces-temporal` | Workflow Engine | Temporalio Server 1.24 | Internal | `:7233` | Durable execution for multi-engine deployments |
-| `ces-postgres` | System Catalog DB | PostgreSQL 16 Alpine | Internal | `:5433` (mapped) | Core relational storage (`ces_db`) |
+| `ces-redis` | In-Memory Broker & Pub/Sub | Redis 7 Alpine | Internal | `:6379` | Celery message broker & real-time SSE pub/sub notification channel |
+| `ces-celery-worker` | Distributed Task Worker | Celery 5.4 / Python 3.12 | Internal | Internal | Long-running policy push to Redshift/Snowflake & immediate SSE notify |
+| `ces-celery-beat` | Scheduled Cron Engine | Celery Beat 5.4 / Python 3.12 | Internal | Internal | Hourly cron metadata sync (`0 * * * *`) & DB history audit writer |
+| `ces-postgres` | Shared System DB | PostgreSQL 16 Alpine | Internal | `:5433` (mapped) | Shared relational storage (`ces_db`) for FastAPI, Worker, and Beat |
 
 ---
 
@@ -290,13 +304,12 @@ docker compose up -d --build
 
 ### Verification
 
-Wait 30–45 seconds for database migrations, Temporal schema registration, and frontend compilation to initialize. Then verify:
+Wait 20–30 seconds for database migrations and frontend compilation to initialize. Then verify:
 
 1. Open [**http://localhost/dashboard**](http://localhost/dashboard) to view the live **Data Security Posture (DSPM)** dashboard (routed via Nginx Gateway).
-2. Open [**http://localhost/policies**](http://localhost/policies) to view active data access policies.
-3. Open [**http://localhost/docs**](http://localhost/docs) (or `http://localhost:8000/docs`) to inspect the OpenAPI / Swagger documentation.
-4. Open [**http://localhost:8088**](http://localhost:8088) (or [**http://localhost/temporal**](http://localhost/temporal)) to view the Temporal Workflow Execution dashboard.
-
+2. Open [**http://localhost/policies**](http://localhost/policies) to view active data access policies and deploy new ones with real-time SSE streaming notifications.
+3. Open [**http://localhost/deployments**](http://localhost/deployments) to monitor real-time platform deployments and inspect the **Celery Beat Tasks History** audit table.
+4. Open [**http://localhost/docs**](http://localhost/docs) (or `http://localhost:8000/docs`) to inspect the OpenAPI / Swagger documentation.
 
 ---
 
@@ -333,6 +346,9 @@ docker compose down -v --remove-orphans
 # Rebuild and restart only the backend-service (FastAPI)
 docker compose up -d --build backend-service
 
+# Rebuild and restart Celery worker or Celery beat
+docker compose up -d --build celery-worker celery-beat
+
 # Rebuild and restart only the frontend-service (React SPA)
 docker compose up -d --build frontend-service
 
@@ -342,8 +358,8 @@ docker compose restart gateway
 # Restart the OPA policy engine to reload Rego files
 docker compose restart opa
 
-# Restart the Temporal workflow orchestrator
-docker compose restart temporal
+# Restart Redis broker
+docker compose restart redis
 
 # Restart platform connectors
 docker compose restart snowflake-connector redshift-connector
@@ -355,14 +371,17 @@ docker compose restart snowflake-connector redshift-connector
 # Stream live logs from Edge Gateway (Nginx reverse proxy access & routing)
 docker logs -f --tail 50 ces-gateway
 
-# Stream live logs from backend-service (last 100 lines)
+# Stream live logs from backend-service (FastAPI & SSE streaming)
 docker logs -f --tail 100 ces-backend-service
+
+# Stream live Celery worker task execution logs
+docker logs -f --tail 100 ces-celery-worker
+
+# Stream live Celery Beat scheduler logs
+docker logs -f --tail 100 ces-celery-beat
 
 # Stream live OPA policy evaluation audit events
 docker logs -f --tail 50 ces-opa
-
-# Stream live Temporal workflow execution events
-docker logs -f --tail 50 ces-backend-service | grep -i "temporal"
 
 # Filter logs for errors and critical warnings across all services
 docker compose logs --tail 200 | grep -E "(ERROR|CRITICAL|Failed|Exception)"
@@ -420,7 +439,7 @@ docker exec -i ces-postgres psql -U ces_user -d ces_db < database/seeds/004_samp
 - **Resolution**: CES maps host port **`5433`** to container port `5432` (`"5433:5432"` in `docker-compose.yml`). If you need to change other exposed ports:
   - Frontend: Edit `80:80` to `8080:80`
   - Backend API: Edit `8000:8000` to `8005:8000`
-  - Temporal UI: Edit `8088:8080` to `8089:8080`
+  - PostgreSQL: Edit `5433:5432` to another unused host port
 
 ### Issue 2: OPA Policy Syntax or Undefined Function Errors
 - **Symptoms**: `POST /api/v1/validation` returns `OPA skipped` or OPA container exits on startup.
@@ -434,20 +453,32 @@ docker exec -i ces-postgres psql -U ces_user -d ces_db < database/seeds/004_samp
      curl -s http://localhost:8181/v1/data | jq .
      ```
 
-### Issue 3: Temporal Worker Not Processing Policy Deployments
-- **Symptoms**: Deployments remain in `PENDING` or `DEPLOYING` state indefinitely.
-- **Root Cause**: Temporal worker disconnected or Temporal schema registration incomplete.
+### Issue 3: Celery Worker or Beat Tasks Not Executing
+- **Symptoms**: Policy deployments stay in `PENDING` or scheduled metadata sync does not run.
+- **Root Cause**: Redis broker connectivity issue or worker/beat process failed to start.
 - **Resolution**:
-  1. Verify Temporal cluster health:
+  1. Check Redis broker health:
      ```bash
-     docker logs ces-temporal --tail 20
+     docker exec ces-redis redis-cli ping
+     # Should return PONG
      ```
-  2. Confirm Temporal namespace registration completed:
+  2. Inspect Celery worker logs for active consumers and error stack traces:
      ```bash
-     docker logs ces-temporal-ns-register
+     docker logs ces-celery-worker --tail 50
      ```
-  3. Open Temporal Web UI at **[http://localhost:8088](http://localhost:8088)** and inspect active workflows on task queue `policy-deployment`.
-  4. Restart backend worker: `docker restart ces-backend-service`.
+  3. Inspect Celery Beat scheduler logs for cron triggers:
+     ```bash
+     docker logs ces-celery-beat --tail 50
+     ```
+  4. Test connector connectivity from Celery worker:
+     ```bash
+     docker exec ces-celery-worker curl -s http://snowflake-connector:8006/health
+     docker exec ces-celery-worker curl -s http://redshift-connector:8007/health
+     ```
+  5. Restart Celery services:
+     ```bash
+     docker compose restart redis celery-worker celery-beat
+     ```
 
 ### Issue 4: Frontend UI Changes Not Appearing (Stale Bundle)
 - **Symptoms**: Code edits in React UI do not show in browser on `http://localhost`.
@@ -519,7 +550,7 @@ docker exec -it ces-backend-service pytest -v
 
 - [ ] **Connect Enterprise IdP**: Direct your Okta or Azure AD SCIM provisioner to `https://<your-domain>/api/v1/scim/v2/Users`.
 
-- [ ] **Temporal Persistent Storage**: In production, ensure PostgreSQL storage volumes for `temporal` and `temporal_visibility` are backed by managed storage (e.g. AWS RDS Aurora PostgreSQL).
+- [ ] **Redis & Celery Reliability**: In production, ensure Redis is configured with persistence (AOF/RDB) or use AWS ElastiCache / Redis Cloud with replication enabled. Ensure database backups for `ces_db` are automated.
 
 ---
 

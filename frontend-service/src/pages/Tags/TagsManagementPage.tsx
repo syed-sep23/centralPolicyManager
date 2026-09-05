@@ -114,8 +114,8 @@ export default function TagsManagementPage() {
           style={{
             marginLeft: depth * 20,
             cursor: 'pointer',
-            borderColor: isSelected ? 'var(--mantine-color-violet-6)' : 'rgba(255,255,255,0.06)',
-            background: isSelected ? 'rgba(124, 58, 237, 0.12)' : 'rgba(255,255,255,0.015)',
+            borderColor: isSelected ? 'var(--mantine-color-indigo-6)' : undefined,
+            backgroundColor: isSelected ? 'var(--nav-active-bg)' : 'transparent',
             transition: 'all 0.15s ease',
           }}
         >

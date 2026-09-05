@@ -50,15 +50,20 @@ export default function App() {
             <Route path="/dashboard"          element={<DashboardPage />} />
             <Route path="/policies"           element={<PoliciesPage />} />
             <Route path="/policies/new"       element={<PolicyStudioPage />} />
-            <Route path="/policies/:id"       element={<PolicyDetailPage />} />
             <Route path="/policies/:id/edit"  element={<PolicyStudioPage />} />
+            <Route path="/policies/:id"       element={<PolicyDetailPage />} />
+            <Route path="/policies/:id/:tab"  element={<PolicyDetailPage />} />
             <Route path="/requests"           element={<RequestsPage />} />
+            <Route path="/requests/:tab"      element={<RequestsPage />} />
             <Route path="/purposes"           element={<PurposesPage />} />
             <Route path="/catalog"            element={<DataCatalogPage />} />
+            <Route path="/catalog/:tab"       element={<DataCatalogPage />} />
             <Route path="/tags"               element={<TagsManagementPage />} />
             <Route path="/platforms"          element={<PlatformsPage />} />
             <Route path="/roles"              element={<RoleManagerPage />} />
+            <Route path="/roles/:tab"         element={<RoleManagerPage />} />
             <Route path="/deployments"        element={<DeploymentsPage />} />
+            <Route path="/deployments/:tab"   element={<DeploymentsPage />} />
             <Route path="*"                   element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>

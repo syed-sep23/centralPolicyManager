@@ -20,10 +20,11 @@ class Settings(BaseSettings):
     # OPA Service URL
     OPA_URL: str = "http://opa:8181"
 
-    # Temporal Configuration
-    TEMPORAL_HOST: str = "temporal:7233"
-    TEMPORAL_NAMESPACE: str = "default"
-    TEMPORAL_TASK_QUEUE: str = "policy-deployment"
+    # Celery & Redis Distributed Task Queue
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+    REDIS_URL: str = "redis://redis:6379/0"
+    SYNC_METADATA_INTERVAL_HOURS: int = 1
 
     # Connectors
     SNOWFLAKE_CONNECTOR_URL: str = "http://snowflake-connector:8006"

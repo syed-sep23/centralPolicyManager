@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Stack, Title, Text, Card, Table, Badge, Group, Avatar, Box, Skeleton,
   Tabs, Button, Modal, TextInput, Select, SimpleGrid, Paper, ThemeIcon,
@@ -13,9 +14,32 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { rbacApi } from '../../api/client'
 
+const VALID_ROLE_TABS = ['users', 'groups', 'attributes'] as const
+type RoleTab = typeof VALID_ROLE_TABS[number]
+
 export default function RoleManagerPage() {
+  const { tab } = useParams<{ tab?: string }>()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<string | null>('users')
+
+  const activeTab: RoleTab = useMemo(() => {
+    if (tab && (VALID_ROLE_TABS as readonly string[]).includes(tab)) {
+      return tab as RoleTab
+    }
+    return 'users'
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== activeTab) {
+      navigate(`/roles/${activeTab}`, { replace: true })
+    }
+  }, [tab, activeTab, navigate])
+
+  const handleTabChange = (val: string | null) => {
+    if (val && (VALID_ROLE_TABS as readonly string[]).includes(val)) {
+      navigate(`/roles/${val}`)
+    }
+  }
 
   // Modals & Drawers state
   const [selectedUser, setSelectedUser] = useState<any | null>(null)
@@ -228,24 +252,24 @@ export default function RoleManagerPage() {
       </Group>
 
       {/* ── CES Architecture Concept Banner ───────────────────────────────── */}
-      <Paper p="md" radius="md" style={{ background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08))', border: '1px solid rgba(99, 102, 241, 0.25)' }}>
+      <Paper p="md" radius="md" className="banner-panel">
         <Group align="flex-start" gap="md">
           <ThemeIcon color="indigo" variant="light" size="lg" radius="md">
             <IconLayersLinked size={22} />
           </ThemeIcon>
           <Box style={{ flex: 1 }}>
-            <Text fw={700} size="sm" c="indigo.4">
+            <Text fw={700} size="sm" c="indigo">
               CES Dynamic ABAC Resolution Architecture
             </Text>
             <Text size="xs" c="dimmed" mt={2} style={{ lineHeight: 1.6 }}>
-              Instead of maintaining brittle role-to-table access lists, policies query metadata: <Text span fw={600} c="white">@user.department == data.department</Text> or <Text span fw={600} c="white">@user.clearance_level &gt;= 'RESTRICTED'</Text>. When group attributes change, data access policies adapt across Snowflake, Redshift, and OPA automatically without manual IT provisioning tickets.
+              Instead of maintaining brittle role-to-table access lists, policies query metadata: <Text span fw={600} c="indigo">@user.department == data.department</Text> or <Text span fw={600} c="indigo">@user.clearance_level &gt;= 'RESTRICTED'</Text>. When group attributes change, data access policies adapt across Snowflake, Redshift, and OPA automatically without manual IT provisioning tickets.
             </Text>
           </Box>
         </Group>
       </Paper>
 
       {/* ── Main Identity Tabs ───────────────────────────────────────────────── */}
-      <Tabs value={activeTab} onChange={setActiveTab} color="indigo">
+      <Tabs value={activeTab} onChange={handleTabChange} color="indigo">
         <Tabs.List mb="md">
           <Tabs.Tab value="users" leftSection={<IconUsers size={16} />}>
             Users & Effective Attributes ({userList.length})
@@ -262,7 +286,7 @@ export default function RoleManagerPage() {
         <Tabs.Panel value="users">
           <Card radius="md" withBorder p={0} style={{ overflow: 'hidden' }}>
             <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
-              <Table.Thead style={{ background: 'var(--mantine-color-gray-0)' }}>
+              <Table.Thead>
                 <Table.Tr>
                   <Table.Th>User Identity</Table.Th>
                   <Table.Th>Department & Title</Table.Th>
@@ -355,7 +379,7 @@ export default function RoleManagerPage() {
         <Tabs.Panel value="groups">
           <Card radius="md" withBorder p={0} style={{ overflow: 'hidden' }}>
             <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
-              <Table.Thead style={{ background: 'var(--mantine-color-gray-0)' }}>
+              <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Identity Group</Table.Th>
                   <Table.Th>Group Code</Table.Th>
@@ -439,7 +463,7 @@ export default function RoleManagerPage() {
                   </Badge>
                 </Group>
                 <Text size="xs" c="dimmed" mb="sm">
-                  Used by <Text span fw={600} c="white">{attr.usersCount}</Text> direct users and <Text span fw={600} c="white">{attr.groupsCount}</Text> identity groups.
+                  Used by <Text span fw={600} c="indigo">{attr.usersCount}</Text> direct users and <Text span fw={600} c="indigo">{attr.groupsCount}</Text> identity groups.
                 </Text>
                 <Divider my="xs" />
                 <Text size="xs" fw={600} mb={4}>Sample Values in Environment:</Text>
@@ -473,7 +497,7 @@ export default function RoleManagerPage() {
         {selectedUser && (
           <Stack gap="md">
             {/* User Profile Overview */}
-            <Paper p="md" radius="md" withBorder style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <Paper p="md" radius="md" withBorder>
               <Group gap="md">
                 <Avatar color="indigo" size="lg" radius="md">
                   {(selectedUser.display_name || selectedUser.username)[0].toUpperCase()}
@@ -489,8 +513,8 @@ export default function RoleManagerPage() {
             </Paper>
 
             {/* Effective Attribute Map Banner */}
-            <Paper p="md" radius="md" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-              <Text fw={700} size="xs" tt="uppercase" c="teal.4" mb={6}>
+            <Paper p="md" radius="md" withBorder>
+              <Text fw={700} size="xs" tt="uppercase" c="teal" mb={6}>
                 Effective Runtime ABAC Attributes (Direct + Inherited)
               </Text>
               {effectiveAttrsQuery.isLoading ? (
@@ -555,7 +579,7 @@ export default function RoleManagerPage() {
               {(effectiveAttrsQuery.data?.data?.inherited_attributes || []).length > 0 ? (
                 <Stack gap="xs">
                   {effectiveAttrsQuery.data?.data?.inherited_attributes.map((ia: any, idx: number) => (
-                    <Group key={idx} justify="space-between" p="xs" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                    <Group key={idx} justify="space-between" p="xs" style={{ borderRadius: 6 }}>
                       <Text size="xs" fw={600}>@{ia.key} = "{ia.value}"</Text>
                       <Badge size="xs" color="violet" variant="light">Source: {ia.source_group}</Badge>
                     </Group>
@@ -571,7 +595,7 @@ export default function RoleManagerPage() {
               <Title order={5} mb="xs">Direct User Attributes</Title>
               <Stack gap="xs" mb="sm">
                 {(effectiveAttrsQuery.data?.data?.direct_attributes || []).map((da: any, idx: number) => (
-                  <Group key={idx} justify="space-between" p="xs" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                  <Group key={idx} justify="space-between" p="xs" style={{ borderRadius: 6 }}>
                     <Text size="xs" fw={600}>@{da.attribute_key} = "{da.attribute_value}"</Text>
                     <ActionIcon
                       color="red"
@@ -638,7 +662,7 @@ export default function RoleManagerPage() {
 
             <Stack gap="xs">
               {(selectedGroup.attributes || []).map((a: any, idx: number) => (
-                <Group key={idx} justify="space-between" p="xs" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                <Group key={idx} justify="space-between" p="xs" style={{ borderRadius: 6 }}>
                   <Text size="xs" fw={600}>@{a.key} = "{a.value}"</Text>
                   <ActionIcon
                     color="red"

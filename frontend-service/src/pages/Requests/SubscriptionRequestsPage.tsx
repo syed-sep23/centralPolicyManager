@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Stack, Title, Text, Group, Button, Badge, Card, Table, Modal,
   Select, TextInput, Textarea, NumberInput, Paper, Tabs, ActionIcon,
@@ -13,9 +14,51 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { requestsApi, metadataApi, purposesApi, rbacApi } from '../../api/client'
 
+const TAB_SLUG_TO_VALUE: Record<string, string> = {
+  all: 'all',
+  pending: 'PENDING',
+  approved: 'APPROVED',
+  rejected: 'REJECTED',
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+}
+
+const TAB_VALUE_TO_SLUG: Record<string, string> = {
+  all: 'all',
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+}
+
 export default function SubscriptionRequestsPage() {
+  const { tab } = useParams<{ tab?: string }>()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<string | null>('all')
+
+  const activeTab = useMemo(() => {
+    if (tab && TAB_SLUG_TO_VALUE[tab]) {
+      return TAB_SLUG_TO_VALUE[tab]
+    }
+    if (tab && TAB_SLUG_TO_VALUE[tab.toLowerCase()]) {
+      return TAB_SLUG_TO_VALUE[tab.toLowerCase()]
+    }
+    return 'all'
+  }, [tab])
+
+  useEffect(() => {
+    const canonicalSlug = TAB_VALUE_TO_SLUG[activeTab] || 'all'
+    if (tab !== canonicalSlug) {
+      navigate(`/requests/${canonicalSlug}`, { replace: true })
+    }
+  }, [tab, activeTab, navigate])
+
+  const handleTabChange = (val: string | null) => {
+    if (val && TAB_VALUE_TO_SLUG[val]) {
+      navigate(`/requests/${TAB_VALUE_TO_SLUG[val]}`)
+    }
+  }
+
   const [modalOpened, setModalOpened] = useState(false)
 
   // Form states
@@ -207,7 +250,7 @@ export default function SubscriptionRequestsPage() {
 
       {/* Tabs & Table */}
       <Card radius="md" withBorder p="md">
-        <Tabs value={activeTab} onChange={setActiveTab} mb="md">
+        <Tabs value={activeTab} onChange={handleTabChange} mb="md">
           <Tabs.List>
             <Tabs.Tab value="all">All Requests ({allRequests.length})</Tabs.Tab>
             <Tabs.Tab value="PENDING">Pending Approval ({pendingCount})</Tabs.Tab>
