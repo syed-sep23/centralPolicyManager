@@ -21,8 +21,9 @@ from services.policy_compiler import (
     fetch_policy_raw_payload,
     generate_natural_language_summary,
 )
+import time
 from tasks.deployment_tasks import deploy_policy_task, publish_event
-from tasks.metadata_tasks import sync_platform_metadata_cron
+from tasks.metadata_tasks import _async_sync_metadata, sync_platform_metadata_cron
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -234,14 +235,14 @@ async def get_celery_task_history(
     return [dict(r) for r in rows]
 
 
-@router.post("/tasks/sync-now", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/tasks/sync-now", status_code=status.HTTP_200_OK)
 async def trigger_manual_metadata_sync(
     body: Optional[ManualSyncRequest] = None,
     platform_codes: Optional[list[str]] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Trigger an immediate on-demand metadata synchronization task via Celery worker.
+    Trigger an immediate on-demand metadata synchronization task.
     Accepts target platform codes or IDs in the body or query params.
     Results will be committed to PostgreSQL celery_task_history upon completion.
     """
@@ -259,15 +260,23 @@ async def trigger_manual_metadata_sync(
             target_codes.extend(res.scalars().all())
 
     final_codes = list(set(target_codes)) if target_codes else None
+    task_id = f"manual-{int(time.time())}"
 
-    async_result = sync_platform_metadata_cron.delay(
-        task_type="MANUAL_SYNC", platform_codes=final_codes
+    result = await _async_sync_metadata(
+        task_id=task_id,
+        task_type="MANUAL_SYNC",
+        target_platform_codes=final_codes,
     )
+
     return {
-        "status": "DISPATCHED",
-        "task_id": async_result.id,
+        "status": result.get("status", "SUCCESS"),
+        "task_id": task_id,
         "platform_codes": final_codes,
-        "message": "Metadata synchronization task dispatched to Celery worker.",
+        "tables_synced": result.get("tables_synced", 0),
+        "columns_synced": result.get("columns_synced", 0),
+        "duration_ms": result.get("duration_ms", 0),
+        "platforms": result.get("platforms", []),
+        "message": "Metadata synchronization completed.",
     }
 
 

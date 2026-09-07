@@ -1,6 +1,7 @@
 """Backend Service Configuration."""
 
 from functools import lru_cache
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,6 +26,8 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
     REDIS_URL: str = "redis://redis:6379/0"
     SYNC_METADATA_INTERVAL_HOURS: int = 1
+    SYNC_METADATA_INTERVAL_MINUTES: Optional[int] = None
+    SYNC_METADATA_CRON: Optional[str] = None
 
     # Connectors
     SNOWFLAKE_CONNECTOR_URL: str = "http://snowflake-connector:8006"

@@ -233,7 +233,7 @@ export default function DeploymentsPage() {
             Real-time Platform Deployments ({deployedPolicies.length})
           </Tabs.Tab>
           <Tabs.Tab value="beat-history">
-            Celery Beat Tasks History ({historyItems.length})
+            Tasks History ({historyItems.length})
           </Tabs.Tab>
         </Tabs.List>
 
@@ -262,8 +262,8 @@ export default function DeploymentsPage() {
                             p.status === 'ENFORCED'
                               ? 'violet'
                               : p.status === 'DEPLOYING'
-                              ? 'yellow'
-                              : 'red'
+                                ? 'yellow'
+                                : 'red'
                           }
                           variant="light"
                           size="sm"
@@ -387,8 +387,8 @@ export default function DeploymentsPage() {
                               item.platform_code === 'SNOWFLAKE'
                                 ? 'blue'
                                 : item.platform_code === 'REDSHIFT'
-                                ? 'red'
-                                : 'violet'
+                                  ? 'red'
+                                  : 'violet'
                             }
                             variant="light"
                           >
@@ -402,8 +402,8 @@ export default function DeploymentsPage() {
                               item.status === 'SUCCESS'
                                 ? 'teal'
                                 : item.status === 'RUNNING'
-                                ? 'yellow'
-                                : 'red'
+                                  ? 'yellow'
+                                  : 'red'
                             }
                           >
                             {item.status}

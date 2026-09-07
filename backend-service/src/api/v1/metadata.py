@@ -1,6 +1,7 @@
 """Metadata Router."""
 
 from datetime import datetime
+import time
 from typing import Optional
 
 import httpx
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from db.session import get_db
 from services.tag_scanner import run_sensitive_data_discovery
-from tasks.metadata_tasks import sync_platform_metadata_cron
+from tasks.metadata_tasks import _async_sync_metadata, sync_platform_metadata_cron
 
 router = APIRouter()
 
@@ -325,9 +326,9 @@ async def delete_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "DELETED", "platform_id": platform_id}
 
 
-@router.post("/platforms/{platform_id}/sync", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/platforms/{platform_id}/sync", status_code=status.HTTP_200_OK)
 async def trigger_platform_sync(platform_id: int, db: AsyncSession = Depends(get_db)):
-    """Trigger on-demand metadata sync for a specific platform."""
+    """Trigger immediate on-demand metadata sync for a specific platform."""
     row = (
         (
             await db.execute(
@@ -345,29 +346,59 @@ async def trigger_platform_sync(platform_id: int, db: AsyncSession = Depends(get
 
     p_code = row["platform_code"]
     p_name = row["platform_name"]
-    async_result = sync_platform_metadata_cron.delay(
-        task_type="MANUAL_SYNC", platform_codes=[p_code]
+    task_id = f"manual-{p_code.lower()}-{int(time.time())}"
+
+    result = await _async_sync_metadata(
+        task_id=task_id,
+        task_type="MANUAL_SYNC",
+        target_platform_codes=[p_code],
     )
+
+    is_failed = result.get("status") == "FAILURE" or (
+        result.get("platforms") and any(p.get("status") == "FAILED" for p in result["platforms"])
+    )
+    if is_failed:
+        error_msg = "Introspection failed"
+        for p in result.get("platforms", []):
+            if p.get("status") == "FAILED":
+                error_msg = p.get("error") or error_msg
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Metadata synchronization failed for {p_name} ({p_code}): {error_msg}",
+        )
+
     return {
-        "status": "DISPATCHED",
-        "task_id": async_result.id,
+        "status": "SUCCESS",
+        "task_id": task_id,
         "platform_id": platform_id,
         "platform_code": p_code,
         "platform_name": p_name,
-        "message": f"Metadata synchronization task for {p_name} ({p_code}) dispatched to Celery worker.",
+        "tables_synced": result.get("tables_synced", 0),
+        "columns_synced": result.get("columns_synced", 0),
+        "duration_ms": result.get("duration_ms", 0),
+        "platforms": result.get("platforms", []),
+        "message": f"Metadata synchronization completed successfully for {p_name} ({p_code}).",
     }
 
 
-@router.post("/platforms/sync-all", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/platforms/sync-all", status_code=status.HTTP_200_OK)
 async def trigger_all_platforms_sync():
-    """Trigger on-demand metadata sync across all connected active data platforms."""
-    async_result = sync_platform_metadata_cron.delay(
-        task_type="MANUAL_SYNC", platform_codes=None
+    """Trigger immediate on-demand metadata sync across all connected active data platforms."""
+    task_id = f"manual-all-{int(time.time())}"
+    result = await _async_sync_metadata(
+        task_id=task_id,
+        task_type="MANUAL_SYNC",
+        target_platform_codes=None,
     )
+
     return {
-        "status": "DISPATCHED",
-        "task_id": async_result.id,
-        "message": "Metadata synchronization task for all active platforms dispatched to Celery worker.",
+        "status": result.get("status", "SUCCESS"),
+        "task_id": task_id,
+        "tables_synced": result.get("tables_synced", 0),
+        "columns_synced": result.get("columns_synced", 0),
+        "duration_ms": result.get("duration_ms", 0),
+        "platforms": result.get("platforms", []),
+        "message": f"Metadata synchronization completed across active platforms: {result.get('tables_synced', 0)} tables and {result.get('columns_synced', 0)} columns synced.",
     }
 
 

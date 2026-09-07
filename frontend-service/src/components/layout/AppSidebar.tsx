@@ -2,7 +2,7 @@ import { NavLink, Stack, Text, Group, Avatar, Box, Divider, Badge, ActionIcon, T
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   IconShieldCheck, IconDatabase, IconUsers, IconClipboardList,
-  IconRocket, IconLayoutDashboard, IconShield, IconTarget, IconSend, IconPlugConnected, IconTag,
+  IconLayoutDashboard, IconShield, IconTarget, IconSend, IconPlugConnected, IconTag,
   IconRefresh,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
@@ -49,7 +49,7 @@ export default function AppSidebar() {
       title: 'PEOPLE & OPERATIONS',
       items: [
         { label: 'Users & Groups', href: '/roles', icon: IconUsers },
-        { label: 'Async Deployments', href: '/deployments', icon: IconRocket },
+        { label: 'Deployment & Task Logs', href: '/deployments', icon: IconClipboardList },
       ],
     },
   ]

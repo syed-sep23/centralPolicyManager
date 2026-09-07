@@ -60,7 +60,7 @@ export default function PlatformsPage() {
 
   // Queries
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
-  const drivers   = useQuery({ queryKey: ['drivers'], queryFn: () => metadataApi.drivers() })
+  const drivers = useQuery({ queryKey: ['drivers'], queryFn: () => metadataApi.drivers() })
 
   const [syncingPlatformId, setSyncingPlatformId] = useState<number | null>(null)
 
@@ -76,22 +76,25 @@ export default function PlatformsPage() {
     mutationFn: (platformId: number) => metadataApi.syncPlatform(platformId),
     onSuccess: (res: any) => {
       const pName = res.data?.platform_name || 'Platform'
+      const tables = res.data?.tables_synced ?? 0
+      const cols = res.data?.columns_synced ?? 0
       notifications.show({
-        title: 'Metadata Sync Dispatched ⚡',
-        message: `Task dispatched to Celery worker to introspect schemas for ${pName}.`,
+        title: 'Metadata Synchronized! ⚡',
+        message: `Successfully synchronized ${tables} tables and ${cols} columns for ${pName}.`,
         color: 'teal',
         icon: <IconCheck />,
       })
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['platforms'] })
-        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
-        queryClient.invalidateQueries({ queryKey: ['databases'] })
-      }, 1500)
+      queryClient.invalidateQueries({ queryKey: ['platforms'] })
+      queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
+      queryClient.invalidateQueries({ queryKey: ['databases'] })
+      queryClient.invalidateQueries({ queryKey: ['schemas'] })
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['columns'] })
     },
     onError: (err: any) => {
       notifications.show({
-        title: 'Sync Dispatch Failed',
-        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        title: 'Sync Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to sync metadata',
         color: 'red',
         icon: <IconX />,
       })
@@ -483,16 +486,6 @@ export default function PlatformsPage() {
           </Text>
         </Box>
         <Group gap="xs">
-          <Button
-            leftSection={<IconRefresh size={16} />}
-            variant="light"
-            color="primary"
-            radius="md"
-            loading={syncAllMutation.isPending}
-            onClick={() => syncAllMutation.mutate()}
-          >
-            Sync All Platforms
-          </Button>
           <Button leftSection={<IconPlus size={16} />} color="indigo" radius="md" onClick={handleOpenCreate}>
             Onboard Data Platform
           </Button>

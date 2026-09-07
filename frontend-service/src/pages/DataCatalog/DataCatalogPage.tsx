@@ -15,7 +15,7 @@ import { notifications } from '@mantine/notifications'
 import { metadataApi } from '../../api/client'
 
 const SENSITIVITY_COLORS: Record<string, string> = {
-  PUBLIC:'green', INTERNAL:'blue', CONFIDENTIAL:'yellow', RESTRICTED:'orange', TOP_SECRET:'red'
+  PUBLIC: 'green', INTERNAL: 'blue', CONFIDENTIAL: 'yellow', RESTRICTED: 'orange', TOP_SECRET: 'red'
 }
 
 const VALID_CATALOG_TABS = ['platforms', 'products'] as const
@@ -44,14 +44,14 @@ export default function DataCatalogPage() {
     }
   }
 
-  const [search,        setSearch]        = useState('')
-  const [tableFilter,   setTableFilter]   = useState('')
-  const [columnFilter,  setColumnFilter]  = useState('')
+  const [search, setSearch] = useState('')
+  const [tableFilter, setTableFilter] = useState('')
+  const [columnFilter, setColumnFilter] = useState('')
 
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(null)
-  const [selectedDb,       setSelectedDb]        = useState<number | null>(null)
-  const [selectedSchema,   setSelectedSchema]    = useState<number | null>(null)
-  const [selectedTable,    setSelectedTable]     = useState<number | null>(null)
+  const [selectedDb, setSelectedDb] = useState<number | null>(null)
+  const [selectedSchema, setSelectedSchema] = useState<number | null>(null)
+  const [selectedTable, setSelectedTable] = useState<number | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -60,25 +60,25 @@ export default function DataCatalogPage() {
     mutationFn: (pid: number) => metadataApi.syncPlatform(pid),
     onSuccess: (res: any) => {
       const pName = res.data?.platform_name || 'Platform'
+      const tables = res.data?.tables_synced ?? 0
+      const cols = res.data?.columns_synced ?? 0
       notifications.show({
-        title: 'Metadata Sync Dispatched ⚡',
-        message: `Task dispatched to Celery worker to introspect schemas for ${pName}.`,
+        title: 'Metadata Synchronized! ⚡',
+        message: `Successfully synchronized ${tables} tables and ${cols} columns for ${pName}.`,
         color: 'teal',
         icon: <IconCheck />,
       })
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['platforms'] })
-        queryClient.invalidateQueries({ queryKey: ['databases'] })
-        queryClient.invalidateQueries({ queryKey: ['schemas'] })
-        queryClient.invalidateQueries({ queryKey: ['tables'] })
-        queryClient.invalidateQueries({ queryKey: ['columns'] })
-        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
-      }, 1500)
+      queryClient.invalidateQueries({ queryKey: ['platforms'] })
+      queryClient.invalidateQueries({ queryKey: ['databases'] })
+      queryClient.invalidateQueries({ queryKey: ['schemas'] })
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['columns'] })
+      queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
     },
     onError: (err: any) => {
       notifications.show({
-        title: 'Sync Dispatch Failed',
-        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        title: 'Sync Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to sync metadata',
         color: 'red',
         icon: <IconX />,
       })
@@ -87,26 +87,26 @@ export default function DataCatalogPage() {
 
   const syncAllMutation = useMutation({
     mutationFn: () => metadataApi.syncAllPlatforms(),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
+      const tables = res.data?.tables_synced ?? 0
+      const cols = res.data?.columns_synced ?? 0
       notifications.show({
-        title: 'Full Metadata Sync Dispatched ⚡',
-        message: 'Celery worker is now introspecting metadata across all active cloud data platforms.',
+        title: 'Full Metadata Sync Complete! ⚡',
+        message: `Successfully synchronized ${tables} tables and ${cols} columns across all active cloud data platforms.`,
         color: 'teal',
         icon: <IconCheck />,
       })
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['platforms'] })
-        queryClient.invalidateQueries({ queryKey: ['databases'] })
-        queryClient.invalidateQueries({ queryKey: ['schemas'] })
-        queryClient.invalidateQueries({ queryKey: ['tables'] })
-        queryClient.invalidateQueries({ queryKey: ['columns'] })
-        queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
-      }, 1500)
+      queryClient.invalidateQueries({ queryKey: ['platforms'] })
+      queryClient.invalidateQueries({ queryKey: ['databases'] })
+      queryClient.invalidateQueries({ queryKey: ['schemas'] })
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['columns'] })
+      queryClient.invalidateQueries({ queryKey: ['celery-task-history'] })
     },
     onError: (err: any) => {
       notifications.show({
-        title: 'Sync Dispatch Failed',
-        message: err.response?.data?.detail || err.message || 'Failed to dispatch sync task',
+        title: 'Sync Failed',
+        message: err.response?.data?.detail || err.message || 'Failed to sync metadata across platforms',
         color: 'red',
         icon: <IconX />,
       })
@@ -116,11 +116,11 @@ export default function DataCatalogPage() {
   // Data queries
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
   const databases = useQuery({ queryKey: ['databases', selectedPlatform], queryFn: () => metadataApi.databases(selectedPlatform!), enabled: !!selectedPlatform })
-  const schemas   = useQuery({ queryKey: ['schemas', selectedDb],         queryFn: () => metadataApi.schemas(selectedDb!),         enabled: !!selectedDb })
-  const tables    = useQuery({ queryKey: ['tables', selectedSchema],      queryFn: () => metadataApi.tables(selectedSchema!),      enabled: !!selectedSchema })
-  const columns   = useQuery({ queryKey: ['columns', selectedTable],      queryFn: () => metadataApi.columns(selectedTable!),      enabled: !!selectedTable })
+  const schemas = useQuery({ queryKey: ['schemas', selectedDb], queryFn: () => metadataApi.schemas(selectedDb!), enabled: !!selectedDb })
+  const tables = useQuery({ queryKey: ['tables', selectedSchema], queryFn: () => metadataApi.tables(selectedSchema!), enabled: !!selectedSchema })
+  const columns = useQuery({ queryKey: ['columns', selectedTable], queryFn: () => metadataApi.columns(selectedTable!), enabled: !!selectedTable })
   const searchRes = useQuery({ queryKey: ['search', search], queryFn: () => metadataApi.search(search), enabled: search.length >= 2 })
-  const products  = useQuery({ queryKey: ['products'], queryFn: () => metadataApi.products() })
+  const products = useQuery({ queryKey: ['products'], queryFn: () => metadataApi.products() })
 
   const getList = (res: any) => {
     if (!res) return []
@@ -130,11 +130,11 @@ export default function DataCatalogPage() {
   }
 
   const platformList = getList(platforms.data)
-  const dbList       = getList(databases.data)
-  const schemaList   = getList(schemas.data)
+  const dbList = getList(databases.data)
+  const schemaList = getList(schemas.data)
   const rawTableList = getList(tables.data)
-  const rawColumnList= getList(columns.data)
-  const productList  = getList(products.data)
+  const rawColumnList = getList(columns.data)
+  const productList = getList(products.data)
 
   // Auto-select defaults for initial load
   useEffect(() => {
@@ -163,9 +163,9 @@ export default function DataCatalogPage() {
 
   // Resolve object labels
   const currentPlatformObj = platformList.find((p: any) => p.platform_id === selectedPlatform)
-  const currentDbObj       = dbList.find((d: any) => d.database_id === selectedDb)
-  const currentSchemaObj   = schemaList.find((s: any) => s.schema_id === selectedSchema)
-  const currentTableObj    = rawTableList.find((t: any) => t.table_id === selectedTable)
+  const currentDbObj = dbList.find((d: any) => d.database_id === selectedDb)
+  const currentSchemaObj = schemaList.find((s: any) => s.schema_id === selectedSchema)
+  const currentTableObj = rawTableList.find((t: any) => t.table_id === selectedTable)
 
   // Filtered lists
   const tableList = rawTableList.filter((t: any) =>
@@ -187,18 +187,6 @@ export default function DataCatalogPage() {
           <Text c="dimmed" size="sm">Browse enterprise platform metadata, databases, schemas, tables, and column attributes</Text>
         </Box>
         <Group gap="xs">
-          {selectedPlatform && (
-            <Button
-              leftSection={<IconRefresh size={16} />}
-              variant="light"
-              color="primary"
-              radius="md"
-              loading={syncPlatformMutation.isPending}
-              onClick={() => syncPlatformMutation.mutate(selectedPlatform)}
-            >
-              Sync {currentPlatformObj?.platform_name || 'Platform'}
-            </Button>
-          )}
           <Button
             leftSection={<IconRefresh size={16} />}
             variant="outline"
@@ -273,7 +261,7 @@ export default function DataCatalogPage() {
       <Tabs value={activeTab} onChange={handleTabChange} color="indigo">
         <Tabs.List>
           <Tabs.Tab value="platforms" leftSection={<IconDatabase size={16} />}>Platform Explorer</Tabs.Tab>
-          <Tabs.Tab value="products"  leftSection={<IconTag size={16} />}>Data Products ({productList.length})</Tabs.Tab>
+          <Tabs.Tab value="products" leftSection={<IconTag size={16} />}>Data Products ({productList.length})</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="platforms" pt="md">
@@ -284,19 +272,19 @@ export default function DataCatalogPage() {
                 <Box>
                   <Group justify="space-between" align="center" mb={4}>
                     <Text size="xs" fw={600} c="dimmed">TARGET PLATFORM</Text>
-                  {selectedPlatform && (
-                    <Button
-                      variant="subtle"
-                      size="compact-xs"
-                      color="primary"
-                      leftSection={<IconRefresh size={12} />}
-                      loading={syncPlatformMutation.isPending}
-                      onClick={() => syncPlatformMutation.mutate(selectedPlatform)}
-                    >
-                      Sync
-                    </Button>
-                  )}
-                </Group>
+                    {selectedPlatform && (
+                      <Button
+                        variant="subtle"
+                        size="compact-xs"
+                        color="primary"
+                        leftSection={<IconRefresh size={12} />}
+                        loading={syncPlatformMutation.isPending}
+                        onClick={() => syncPlatformMutation.mutate(selectedPlatform)}
+                      >
+                        Sync
+                      </Button>
+                    )}
+                  </Group>
                   <Select
                     data={platformList.map((p: any) => ({
                       value: String(p.platform_id),
