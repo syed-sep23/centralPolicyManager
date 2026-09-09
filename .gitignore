@@ -25,6 +25,7 @@ ENV/
 env/
 env.bak/
 venv.bak/
+.agents/
 
 # Testing, Coverage & Type Checking
 .pytest_cache/

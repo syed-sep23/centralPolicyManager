@@ -117,13 +117,6 @@ export default function AppSidebar() {
                       leftSection={<item.icon size={16} stroke={1.5} />}
                       active={active}
                       onClick={() => navigate(item.href)}
-                      style={{
-                        borderRadius: 6,
-                        fontSize: '0.8125rem',
-                        padding: '6px 10px',
-                      }}
-                      color="indigo"
-                      variant="light"
                     />
                   )
                 })}

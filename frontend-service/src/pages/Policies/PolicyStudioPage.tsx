@@ -860,7 +860,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="snowflake">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block className="code-block">
+                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.snowflake_sql}
                     </Code>
                   </ScrollArea.Autosize>
@@ -868,7 +868,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="redshift">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block className="code-block">
+                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.redshift_sql}
                     </Code>
                   </ScrollArea.Autosize>
@@ -876,7 +876,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="opa">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block className="code-block">
+                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.opa_rego}
                     </Code>
                   </ScrollArea.Autosize>
@@ -884,7 +884,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="json">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block className="code-block">
+                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {JSON.stringify(constructDraftPayload(), null, 2)}
                     </Code>
                   </ScrollArea.Autosize>

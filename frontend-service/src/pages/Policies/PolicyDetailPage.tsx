@@ -1047,28 +1047,28 @@ export default function PolicyDetailPage() {
                   </Tabs.List>
                   <Tabs.Panel value="snowflake">
                     <Box style={{ position: 'relative' }}>
-                      <Code block className="code-block" style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
                         {compiledData.data.snowflake_sql}
                       </Code>
                     </Box>
                   </Tabs.Panel>
                   <Tabs.Panel value="redshift">
                     <Box style={{ position: 'relative' }}>
-                      <Code block className="code-block" style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
                         {compiledData.data.redshift_sql}
                       </Code>
                     </Box>
                   </Tabs.Panel>
                   <Tabs.Panel value="opa">
                     <Box style={{ position: 'relative' }}>
-                      <Code block className="code-block" style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
                         {compiledData.data.opa_rego || '# No OPA Rego generated for this version'}
                       </Code>
                     </Box>
                   </Tabs.Panel>
                   <Tabs.Panel value="raw_json">
                     <Box style={{ position: 'relative' }}>
-                      <Code block className="code-block" style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
                         {JSON.stringify(compiledData.data.raw_payload, null, 2)}
                       </Code>
                     </Box>
