@@ -18,10 +18,14 @@ from services.policy_compiler import fetch_policy_raw_payload
 
 log = structlog.get_logger()
 
-CONNECTOR_MAP = {
-    "SNOWFLAKE": lambda: settings.SNOWFLAKE_CONNECTOR_URL,
-    "REDSHIFT": lambda: settings.REDSHIFT_CONNECTOR_URL,
-}
+class PlatformRow(dict):
+    """Dictionary subclass supporting attribute access (e.g. p.driver_code)."""
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            return None
 
 
 def publish_event(event_id: str, data: dict):
@@ -83,9 +87,12 @@ async def _async_deploy_policy(
                             """
                             SELECT pvt.platform_id, mp.platform_code, mp.account_identifier,
                                    mp.warehouse, mp.default_database, mp.role_name,
-                                   mp.host, mp.port, mp.db_user, mp.db_password
+                                   mp.host, mp.port, mp.db_user, mp.db_password,
+                                   COALESCE(d.driver_code, mp.driver_code, mp.platform_code) AS driver_code,
+                                   d.driver_name
                             FROM policy_version_targets pvt
                             JOIN metadata_platforms mp ON mp.platform_id = pvt.platform_id
+                            LEFT JOIN metadata_platform_drivers d ON COALESCE(mp.driver_code, mp.platform_code) = d.driver_code
                             WHERE pvt.version_id = :v AND mp.is_active = TRUE
                             """
                         ),
@@ -95,18 +102,21 @@ async def _async_deploy_policy(
                 .mappings()
                 .all()
             )
-            platforms = [dict(r) for r in rows]
+            platforms = [PlatformRow(r) for r in rows]
             if not platforms:
                 rows = (
                     (
                         await db.execute(
                             text(
                                 """
-                                SELECT platform_id, platform_code, account_identifier,
-                                       warehouse, default_database, role_name,
-                                       host, port, db_user, db_password
-                                FROM metadata_platforms
-                                WHERE is_active = TRUE
+                                SELECT mp.platform_id, mp.platform_code, mp.account_identifier,
+                                       mp.warehouse, mp.default_database, mp.role_name,
+                                       mp.host, mp.port, mp.db_user, mp.db_password,
+                                       COALESCE(d.driver_code, mp.driver_code, mp.platform_code) AS driver_code,
+                                       d.driver_name
+                                FROM metadata_platforms mp
+                                LEFT JOIN metadata_platform_drivers d ON COALESCE(mp.driver_code, mp.platform_code) = d.driver_code
+                                WHERE mp.is_active = TRUE
                                 """
                             )
                         )
@@ -114,18 +124,21 @@ async def _async_deploy_policy(
                     .mappings()
                     .all()
                 )
-                platforms = [dict(r) for r in rows]
+                platforms = [PlatformRow(r) for r in rows]
         else:
             rows = (
                 (
                     await db.execute(
                         text(
                             """
-                            SELECT platform_id, platform_code, account_identifier,
-                                   warehouse, default_database, role_name,
-                                   host, port, db_user, db_password
-                            FROM metadata_platforms
-                            WHERE platform_id = ANY(:ids) AND is_active = TRUE
+                            SELECT mp.platform_id, mp.platform_code, mp.account_identifier,
+                                   mp.warehouse, mp.default_database, mp.role_name,
+                                   mp.host, mp.port, mp.db_user, mp.db_password,
+                                   COALESCE(d.driver_code, mp.driver_code, mp.platform_code) AS driver_code,
+                                   d.driver_name
+                            FROM metadata_platforms mp
+                            LEFT JOIN metadata_platform_drivers d ON COALESCE(mp.driver_code, mp.platform_code) = d.driver_code
+                            WHERE mp.platform_id = ANY(:ids) AND mp.is_active = TRUE
                             """
                         ),
                         {"ids": target_platform_ids},
@@ -134,7 +147,7 @@ async def _async_deploy_policy(
                 .mappings()
                 .all()
             )
-            platforms = [dict(r) for r in rows]
+            platforms = [PlatformRow(r) for r in rows]
 
         # Update DB targets to IN_PROGRESS with celery_task_id
         for p in platforms:
@@ -153,7 +166,7 @@ async def _async_deploy_policy(
         platform_statuses = []
         for p in platforms:
             p_code = p["platform_code"]
-            connector_url = CONNECTOR_MAP.get(p_code, lambda: None)()
+            connector_url = settings[f"{p.driver_code}_URL"]
             p_start = time.time()
             p_started_at = datetime.now(timezone.utc)
 

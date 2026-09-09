@@ -57,7 +57,7 @@ services:
     container_name: ces-backend-service
     restart: unless-stopped
     ports:
-      - "8000:8000"   # Direct API access / Gateway routes via port 80
+      - "8000:8000" # Direct API access / Gateway routes via port 80
     env_file:
       - ./backend-service/.env
     networks:
@@ -112,13 +112,13 @@ services:
       - ./database/schema/001_core_domain.sql:/docker-entrypoint-initdb.d/001_core_domain.sql:ro
       - ./database/schema/002_metadata.sql:/docker-entrypoint-initdb.d/002_metadata.sql:ro
       - ./database/schema/003_policies.sql:/docker-entrypoint-initdb.d/003_policies.sql:ro
-      - ./database/seeds/004_sample_data.sql:/docker-entrypoint-initdb.d/004_sample_data.sql:ro
+      - ./database/seeds/004_sample_minimal_data.sql:/docker-entrypoint-initdb.d/004_sample_minimal_data.sql:ro
     ports:
-      - "5433:5432"   # Mapped for developer DBA inspection
+      - "5433:5432" # Mapped for developer DBA inspection
     networks:
       - internal-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ces_user -d ces_db"]
+      test: [ "CMD-SHELL", "pg_isready -U ces_user -d ces_db" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -150,7 +150,7 @@ services:
     networks:
       - internal-net
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -164,7 +164,7 @@ services:
       dockerfile: backend-service/Dockerfile
     container_name: ces-celery-worker
     restart: unless-stopped
-    command: ["celery", "-A", "src.celery_app.celery", "worker", "--loglevel=info", "-c", "4"]
+    command: [ "celery", "-A", "src.celery_app.celery", "worker", "--loglevel=info", "-c", "4" ]
     env_file:
       - ./backend-service/.env
     environment:
@@ -189,7 +189,7 @@ services:
       dockerfile: backend-service/Dockerfile
     container_name: ces-celery-beat
     restart: unless-stopped
-    command: ["celery", "-A", "src.celery_app.celery", "beat", "--loglevel=info"]
+    command: [ "celery", "-A", "src.celery_app.celery", "beat", "--loglevel=info" ]
     env_file:
       - ./backend-service/.env
     environment:
@@ -204,7 +204,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-
 
 # ==============================================================================
 # Network Topology: Public Ingress & Zero-Trust Isolated Internal Network

@@ -305,7 +305,7 @@ export default function PlatformsPage() {
     setPlatformCode(p.platform_code || '')
     setPlatformName(p.platform_name || '')
     setConnectionAlias(p.connection_alias || '')
-    const driver = PLATFORM_OPTIONS.find((o) => (p.platform_code || '').toUpperCase().includes(o.value))?.value || 'CUSTOM_JDBC'
+    const driver = p.driver_code || PLATFORM_OPTIONS.find((o) => (p.platform_code || '').toUpperCase().includes(o.value))?.value || 'CUSTOM_JDBC'
     setPlatformType(driver)
 
     setAccountIdentifier(p.account_identifier || (driver === 'SNOWFLAKE' ? 'demo.us-east-1' : ''))
@@ -351,6 +351,7 @@ export default function PlatformsPage() {
       const payload = {
         platform_code: platformCode,
         platform_name: platformName,
+        driver_code: platformType,
         connection_alias: connectionAlias || `${platformCode.toLowerCase()}_conn`,
         account_identifier: accountIdentifier,
         host,

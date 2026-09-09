@@ -21,6 +21,7 @@ router = APIRouter()
 class PlatformCreate(BaseModel):
     platform_code: str
     platform_name: str
+    driver_code: Optional[str] = None
     platform_version: Optional[str] = "1.0"
     connection_alias: Optional[str] = None
     account_identifier: Optional[str] = None
@@ -39,6 +40,7 @@ class PlatformCreate(BaseModel):
 
 class PlatformUpdate(BaseModel):
     platform_name: Optional[str] = None
+    driver_code: Optional[str] = None
     connection_alias: Optional[str] = None
     account_identifier: Optional[str] = None
     host: Optional[str] = None
@@ -67,63 +69,22 @@ class TestConnectionRequest(BaseModel):
     db_password: Optional[str] = None
 
 
-PLATFORM_DRIVERS = [
-    {
-        "driver_code": "SNOWFLAKE",
-        "driver_name": "Snowflake Data Cloud",
-        "description": "Tag-based Masking & Row Access Policies",
-        "fields": [
-            "account_identifier",
-            "warehouse",
-            "default_database",
-            "role",
-            "db_user",
-            "db_password",
-        ],
-    },
-    {
-        "driver_code": "REDSHIFT",
-        "driver_name": "AWS Redshift Warehouse",
-        "description": "Row-Level Security (RLS) & Dynamic Data Masking",
-        "fields": ["host", "port", "default_database", "db_user", "db_password", "iam_role_arn"],
-    },
-    {
-        "driver_code": "DATABRICKS",
-        "driver_name": "Databricks Unity Catalog",
-        "description": "Unity Catalog Column Masks & Row Filters",
-        "fields": ["host", "http_path", "catalog_name", "db_user", "db_password"],
-    },
-    {
-        "driver_code": "BIGQUERY",
-        "driver_name": "Google BigQuery Analytics",
-        "description": "BigQuery Policy Tags & Row Level Security",
-        "fields": ["account_identifier", "default_database", "db_user", "db_password"],
-    },
-    {
-        "driver_code": "POSTGRESQL",
-        "driver_name": "PostgreSQL Database",
-        "description": "PostgreSQL Row-Level Security & Column Grants",
-        "fields": ["host", "port", "default_database", "db_user", "db_password"],
-    },
-    {
-        "driver_code": "TRINO",
-        "driver_name": "Trino / Starburst Engine",
-        "description": "Distributed SQL Access Control & Column Masking",
-        "fields": ["host", "port", "default_database", "db_user", "db_password"],
-    },
-    {
-        "driver_code": "CUSTOM_JDBC",
-        "driver_name": "Custom JDBC / REST Connector",
-        "description": "Generic SQL Data Platform Connector",
-        "fields": ["host", "port", "default_database", "db_user", "db_password"],
-    },
-]
-
-
 @router.get("/platforms/drivers")
-async def list_platform_drivers():
+async def list_platform_drivers(db: AsyncSession = Depends(get_db)):
     """Return all supported multi-cloud data platform drivers and required parameter schemas."""
-    return PLATFORM_DRIVERS
+    try:
+        rows = (
+            await db.execute(
+                text("SELECT driver_code, driver_name, description, fields FROM metadata_platform_drivers WHERE is_active = TRUE ORDER BY driver_name")
+            )
+        ).mappings().all()
+        if rows:
+            return [dict(r) for r in rows]
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Service UNAVAILABLE: Database drivers unavailable",
+        )
 
 
 @router.get("/platforms")
@@ -131,9 +92,17 @@ async def list_platforms(db: AsyncSession = Depends(get_db)):
     rows = (
         (
             await db.execute(
-                text(
-                    "SELECT * FROM metadata_platforms WHERE is_active = TRUE ORDER BY platform_code"
-                )
+                text("""
+                    SELECT 
+                        p.*,
+                        COALESCE(d.driver_code, p.driver_code, p.platform_code) AS driver_code,
+                        d.driver_name,
+                        d.fields AS driver_fields
+                    FROM metadata_platforms p
+                    LEFT JOIN metadata_platform_drivers d ON COALESCE(p.driver_code, p.platform_code) = d.driver_code
+                    WHERE p.is_active = TRUE 
+                    ORDER BY p.platform_code
+                """)
             )
         )
         .mappings()
@@ -147,9 +116,16 @@ async def get_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
     row = (
         (
             await db.execute(
-                text(
-                    "SELECT * FROM metadata_platforms WHERE platform_id = :p AND is_active = TRUE"
-                ),
+                text("""
+                    SELECT 
+                        p.*,
+                        COALESCE(d.driver_code, p.driver_code, p.platform_code) AS driver_code,
+                        d.driver_name,
+                        d.fields AS driver_fields
+                    FROM metadata_platforms p
+                    LEFT JOIN metadata_platform_drivers d ON COALESCE(p.driver_code, p.platform_code) = d.driver_code
+                    WHERE p.platform_id = :p AND p.is_active = TRUE
+                """),
                 {"p": platform_id},
             )
         )
@@ -164,22 +140,24 @@ async def get_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/platforms", status_code=201)
 async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_db)):
     alias = body.connection_alias or f"{body.platform_code.lower()}_conn"
+    driver = body.driver_code or body.platform_code
     res = await db.execute(
         text("""
             INSERT INTO metadata_platforms (
-                platform_code, platform_name, platform_version, connection_alias,
+                platform_code, platform_name, driver_code, platform_version, connection_alias,
                 account_identifier, warehouse, default_database, role_name,
                 host, port, http_path, catalog_name, db_user, db_password,
                 connection_status, last_tested_at, is_active
             )
             VALUES (
-                :c, :n, :v, :a,
+                :c, :n, :driver_code, :v, :a,
                 :acc, :wh, :db, :role,
                 :host, :port, :http, :cat, :u, :pwd,
                 :conn_status, :tested_at, TRUE
             )
             ON CONFLICT (platform_code) DO UPDATE SET
                 platform_name = EXCLUDED.platform_name,
+                driver_code = COALESCE(EXCLUDED.driver_code, metadata_platforms.driver_code),
                 connection_alias = EXCLUDED.connection_alias,
                 account_identifier = EXCLUDED.account_identifier,
                 warehouse = EXCLUDED.warehouse,
@@ -199,6 +177,7 @@ async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_d
         {
             "c": body.platform_code,
             "n": body.platform_name,
+            "driver_code": driver,
             "v": body.platform_version,
             "a": alias,
             "acc": body.account_identifier,
@@ -228,6 +207,7 @@ async def update_platform(
         text("""
             UPDATE metadata_platforms
             SET platform_name = COALESCE(:n, platform_name),
+                driver_code = COALESCE(:driver_code, driver_code),
                 connection_alias = COALESCE(:a, connection_alias),
                 account_identifier = COALESCE(:acc, account_identifier),
                 warehouse = COALESCE(:wh, warehouse),
@@ -247,6 +227,7 @@ async def update_platform(
         {
             "p": platform_id,
             "n": body.platform_name,
+            "driver_code": body.driver_code,
             "a": body.connection_alias,
             "acc": body.account_identifier,
             "wh": body.warehouse,

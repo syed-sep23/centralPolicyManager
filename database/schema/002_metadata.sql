@@ -4,11 +4,22 @@
 -- Extensible via platform_id discriminator — no schema changes for new platforms
 -- ============================================================
 
+-- ─── Platform Drivers Registry (Extensible Multi-Cloud Drivers) ───────────────
+CREATE TABLE IF NOT EXISTS metadata_platform_drivers (
+    driver_code         VARCHAR(50)  PRIMARY KEY,
+    driver_name         VARCHAR(100) NOT NULL,
+    description         TEXT,
+    fields              JSONB NOT NULL DEFAULT '[]'::jsonb,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ─── Platform Registry ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS metadata_platforms (
     platform_id         SERIAL PRIMARY KEY,
     platform_code       VARCHAR(50)  NOT NULL UNIQUE,
     platform_name       VARCHAR(100) NOT NULL,
+    driver_code         VARCHAR(50)  REFERENCES metadata_platform_drivers(driver_code) ON DELETE SET NULL,
     platform_version    VARCHAR(50),
     connection_alias    VARCHAR(100),
     account_identifier  VARCHAR(255),
@@ -142,22 +153,13 @@ CREATE TABLE IF NOT EXISTS platform_role_mappings (
 );
 
 -- ─── Indexes ──────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_meta_platform_driver ON metadata_platforms(driver_code);
 CREATE INDEX IF NOT EXISTS idx_meta_db_platform     ON metadata_databases(platform_id);
 CREATE INDEX IF NOT EXISTS idx_meta_schema_db       ON metadata_schemas(database_id);
 CREATE INDEX IF NOT EXISTS idx_meta_table_schema    ON metadata_tables(schema_id);
 CREATE INDEX IF NOT EXISTS idx_meta_col_table       ON metadata_columns(table_id);
 CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_col  ON metadata_tag_assignments(column_id);
 CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_tbl  ON metadata_tag_assignments(table_id);
-
--- ─── Platform Drivers Registry (Extensible Multi-Cloud Drivers) ───────────────
-CREATE TABLE IF NOT EXISTS metadata_platform_drivers (
-    driver_code         VARCHAR(50)  PRIMARY KEY,
-    driver_name         VARCHAR(100) NOT NULL,
-    description         TEXT,
-    fields              JSONB NOT NULL DEFAULT '[]'::jsonb,
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 -- ─── Automated Tag Discovery Identifiers & Rules ──────────────────────────────
 CREATE TABLE IF NOT EXISTS metadata_tag_rules (

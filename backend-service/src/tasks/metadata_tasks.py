@@ -15,10 +15,14 @@ from tasks import get_task_db
 
 log = structlog.get_logger()
 
-CONNECTOR_MAP = {
-    "SNOWFLAKE": lambda: settings.SNOWFLAKE_CONNECTOR_URL,
-    "REDSHIFT": lambda: settings.REDSHIFT_CONNECTOR_URL,
-}
+class PlatformRow(dict):
+    """Dictionary subclass supporting attribute access (e.g. p.driver_code)."""
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            return None
 
 
 async def _async_sync_metadata(task_id: str, task_type: str = "CRON_BEAT", target_platform_codes: Optional[list[str]] = None) -> dict:
@@ -41,12 +45,21 @@ async def _async_sync_metadata(task_id: str, task_type: str = "CRON_BEAT", targe
         )
         await db.commit()
 
-        # 2. Fetch target platforms
+        # 2. Fetch target platforms with platform driver details
         if target_platform_codes:
             rows = (
                 (
                     await db.execute(
-                        text("SELECT * FROM metadata_platforms WHERE platform_code = ANY(:codes) AND is_active = TRUE"),
+                        text("""
+                            SELECT 
+                                p.*,
+                                COALESCE(d.driver_code, p.driver_code, p.platform_code) AS driver_code,
+                                d.driver_name,
+                                d.fields AS driver_fields
+                            FROM metadata_platforms p
+                            LEFT JOIN metadata_platform_drivers d ON COALESCE(p.driver_code, p.platform_code) = d.driver_code
+                            WHERE p.platform_code = ANY(:codes) AND p.is_active = TRUE
+                        """),
                         {"codes": target_platform_codes},
                     )
                 )
@@ -57,25 +70,36 @@ async def _async_sync_metadata(task_id: str, task_type: str = "CRON_BEAT", targe
             rows = (
                 (
                     await db.execute(
-                        text("SELECT * FROM metadata_platforms WHERE is_active = TRUE ORDER BY platform_code")
+                        text("""
+                            SELECT 
+                                p.*,
+                                COALESCE(d.driver_code, p.driver_code, p.platform_code) AS driver_code,
+                                d.driver_name,
+                                d.fields AS driver_fields
+                            FROM metadata_platforms p
+                            LEFT JOIN metadata_platform_drivers d ON COALESCE(p.driver_code, p.platform_code) = d.driver_code
+                            WHERE p.is_active = TRUE 
+                            ORDER BY p.platform_code
+                        """)
                     )
                 )
                 .mappings()
                 .all()
             )
-        platforms = [dict(r) for r in rows]
+        platforms = [PlatformRow(r) for r in rows]
 
         # 3. For each platform, call connector & persist metadata
         for p in platforms:
             p_code = p["platform_code"]
             p_id = p["platform_id"]
-            connector_url = CONNECTOR_MAP.get(p_code, lambda: None)()
+            connector_url = settings[f"{p.driver_code}_URL"]
             p_start = time.time()
             p_started_at = datetime.now(timezone.utc)
             p_tables_count = 0
             p_cols_count = 0
 
             if not connector_url:
+                log.warning("metadata_sync.no_connector", platform=p_code, driver=p.driver_code)
                 continue
 
             try:

@@ -32,6 +32,36 @@ class Settings(BaseSettings):
     # Connectors
     SNOWFLAKE_CONNECTOR_URL: str = "http://snowflake-connector:8006"
     REDSHIFT_CONNECTOR_URL: str = "http://redshift-connector:8007"
+    SNOWFLAKE_URL: Optional[str] = None
+    REDSHIFT_URL: Optional[str] = None
+
+    def model_post_init(self, __context) -> None:
+        if not self.SNOWFLAKE_URL:
+            self.SNOWFLAKE_URL = self.SNOWFLAKE_CONNECTOR_URL
+        if not self.REDSHIFT_URL:
+            self.REDSHIFT_URL = self.REDSHIFT_CONNECTOR_URL
+
+    def __getitem__(self, key: str):
+        if not isinstance(key, str):
+            return None
+        key_upper = key.upper()
+        if hasattr(self, key_upper):
+            val = getattr(self, key_upper)
+            if val is not None:
+                return val
+        if key_upper.endswith("_URL") and not key_upper.endswith("_CONNECTOR_URL"):
+            alt = key_upper[:-4] + "_CONNECTOR_URL"
+            if hasattr(self, alt):
+                return getattr(self, alt)
+        elif key_upper.endswith("_CONNECTOR_URL"):
+            alt = key_upper[:-14] + "_URL"
+            if hasattr(self, alt):
+                return getattr(self, alt)
+        return None
+
+    def get(self, key: str, default=None):
+        val = self[key]
+        return val if val is not None else default
 
     # App Settings
     ENVIRONMENT: str = "development"

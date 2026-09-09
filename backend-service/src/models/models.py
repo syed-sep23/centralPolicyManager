@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.session import Base
@@ -256,3 +257,46 @@ class PolicyRuleResource(Base):
     resource_scope: Mapped[str] = mapped_column(String(30), nullable=False)
 
     rule: Mapped[PolicyRule] = relationship("PolicyRule", back_populates="resources")
+
+
+# ─── Platform Drivers Registry ────────────────────────────────────────────────
+class MetadataPlatformDriver(Base):
+    __tablename__ = "metadata_platform_drivers"
+
+    driver_code: Mapped[str] = mapped_column(String(50), primary_key=True)
+    driver_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    fields: Mapped[list] = mapped_column(JSONB, default=list)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    platforms: Mapped[list[MetadataPlatform]] = relationship("MetadataPlatform", back_populates="driver")
+
+
+# ─── Platform Registry ────────────────────────────────────────────────────────
+class MetadataPlatform(Base):
+    __tablename__ = "metadata_platforms"
+
+    platform_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform_code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    platform_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    driver_code: Mapped[Optional[str]] = mapped_column(ForeignKey("metadata_platform_drivers.driver_code"))
+    platform_version: Mapped[Optional[str]] = mapped_column(String(50))
+    connection_alias: Mapped[Optional[str]] = mapped_column(String(100))
+    account_identifier: Mapped[Optional[str]] = mapped_column(String(255))
+    warehouse: Mapped[Optional[str]] = mapped_column(String(100))
+    default_database: Mapped[Optional[str]] = mapped_column(String(100))
+    role_name: Mapped[Optional[str]] = mapped_column(String(100))
+    host: Mapped[Optional[str]] = mapped_column(String(255))
+    port: Mapped[Optional[int]] = mapped_column(Integer)
+    http_path: Mapped[Optional[str]] = mapped_column(String(255))
+    catalog_name: Mapped[Optional[str]] = mapped_column(String(100))
+    db_user: Mapped[Optional[str]] = mapped_column(String(100))
+    db_password: Mapped[Optional[str]] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    connection_status: Mapped[str] = mapped_column(String(30), default="UNTESTED")
+    last_tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    driver: Mapped[Optional[MetadataPlatformDriver]] = relationship("MetadataPlatformDriver", back_populates="platforms")
+
