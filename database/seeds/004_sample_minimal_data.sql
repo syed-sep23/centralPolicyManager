@@ -53,7 +53,7 @@ INSERT INTO user_role_mappings (mapping_id, user_id, role_id, granted_by_user_id
 (4,  6, 3,  7), -- frank.nguyen → Data Engineer
 (5,  6, 10, 7), -- frank.nguyen → ROLE_DATA_ENGINEER
 (6,  7, 8,  7)  -- admin        → Super Admin
-ON CONFLICT (mapping_id) DO NOTHING;
+ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- ─── Minimal Data Platforms ───────────────────────────────────────────────────
 INSERT INTO metadata_platforms (platform_id, platform_code, platform_name, driver_code, platform_version, connection_alias, account_identifier, warehouse, default_database, role_name, host, port, db_user, db_password, assigned_user_id, assigned_group_ids, connection_status) VALUES
@@ -84,21 +84,6 @@ ON CONFLICT (domain_id) DO NOTHING;
 INSERT INTO data_products (product_id, domain_id, product_name, product_code, description, sensitivity_level) VALUES
 (1, 1, 'Revenue Summary Feed', 'PROD_REV_SUM', 'Aggregated monthly revenue metrics per region', 'CONFIDENTIAL')
 ON CONFLICT (product_id) DO NOTHING;
-
--- ─── Automated Tag Discovery Identifiers Seed ─────────────────────────────────
-INSERT INTO metadata_tag_rules (tag_path, category, regex_pattern, description) VALUES
-('Discovered.PII.Email',            'PII',       '.*(email|mail_addr|e_mail).*',                                                                'Email address classifier'),
-('Discovered.PII.Phone',            'PII',       '.*(phone|mobile|cell|contact_num|tel_num).*',                                                 'Telephone & mobile number classifier'),
-('Discovered.PII.SSN',              'PII',       '.*(ssn|social_sec|national_id|tax_id).*',                                                     'Social Security & National ID classifier'),
-('Discovered.PII.Name',             'PII',       '.*(first_name|last_name|full_name|customer_name|patient_name|user_name|contact_name).*',      'Person full/first/last name classifier'),
-('Discovered.Financial.CreditCard', 'FINANCIAL', '.*(card_num|credit_card|cc_num|pan|card_number).*',                                          'Payment card / credit card classifier'),
-('Discovered.Financial.Salary',     'FINANCIAL', '.*(salary|wage|compensation|bonus|annual_income|pay_rate).*',                                 'Employee compensation / wage classifier'),
-('Discovered.Financial.BankAccount','FINANCIAL', '.*(account_num|bank_acc|iban|routing_num|swift_code).*',                                     'Bank account and routing number classifier'),
-('Discovered.Location.Address',     'LOCATION',  '.*(address|street_addr|postal_code|zip_code|residence).*',                                    'Postal & physical street address classifier')
-ON CONFLICT (tag_path) DO UPDATE SET
-    category = EXCLUDED.category,
-    regex_pattern = EXCLUDED.regex_pattern,
-    description = EXCLUDED.description;
 
 -- ─── Advance Auto-Increment Sequences ─────────────────────────────────────────
 SELECT setval('organizations_organization_id_seq',           COALESCE((SELECT MAX(organization_id) FROM organizations), 1));

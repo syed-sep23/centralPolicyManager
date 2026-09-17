@@ -33,7 +33,6 @@ class SnowflakePolicyCompiler:
         policy_code = (raw_payload.get("policy_code") or "UNKNOWN").upper().replace("-", "_")
         policy_name = raw_payload.get("policy_name") or "UNKNOWN"
         version_id = raw_payload.get("version_id") or "1"
-        tags = raw_payload.get("tags") or []
         target_users = raw_payload.get("target_users") or []
 
         lines = [
@@ -64,7 +63,6 @@ class SnowflakePolicyCompiler:
             "USE ROLE ACCOUNTADMIN;",
             "CREATE DATABASE IF NOT EXISTS GOVERNANCE_DB;",
             "CREATE SCHEMA IF NOT EXISTS GOVERNANCE_DB.POLICIES;",
-            "CREATE SCHEMA IF NOT EXISTS GOVERNANCE_DB.TAGS;",
             "",
         ])
 
@@ -90,16 +88,7 @@ class SnowflakePolicyCompiler:
                 if code:
                     role_codes.append(f"CES_{code.upper()}")
 
-            purposes = [
-                c.get("compare_value")
-                for c in rule.get("conditions", [])
-                if c.get("attribute_key") == "purpose" and c.get("compare_value")
-            ]
-
             resources = rule.get("resources", [])
-            has_tag_resource = (
-                any(r.get("resource_scope") == "TAG" for r in resources) or len(tags) > 0
-            )
 
             for action in rule.get("actions", []):
                 act_type = action.get("action_type")
@@ -113,13 +102,6 @@ class SnowflakePolicyCompiler:
                     policy_name_sf = (
                         f"GOVERNANCE_DB.POLICIES.mask_{policy_code.lower()}_{mask_col.lower()}"
                     )
-
-                    purpose_clause = ""
-                    if purposes:
-                        purpose_list = ", ".join([f"'{p}'" for p in purposes])
-                        purpose_clause = (
-                            f"\n    WHEN GETVARIABLE('CES_PURPOSE') IN ({purpose_list}) THEN val"
-                        )
 
                     lines.append("-- Create Native Snowflake Masking Policy (Compiled per User)")
                     lines.append(
@@ -136,14 +118,14 @@ class SnowflakePolicyCompiler:
                             lines.append(
                                 f"    -- User Entitlement: {disp_name} ({u.get('username')}) [Group: {grp_code}]"
                             )
-                            lines.append(f"    WHEN CURRENT_USER() = '{sf_uid}' THEN val{purpose_clause}")
+                            lines.append(f"    WHEN CURRENT_USER() = '{sf_uid}' THEN val")
                     else:
                         exempt_roles = ["'ACCOUNTADMIN'"]
                         if role_codes:
                             exempt_roles.extend([f"'{r}'" for r in role_codes])
                         roles_clause = ", ".join(exempt_roles)
                         lines.append(
-                            f"    WHEN CURRENT_ROLE() IN ({roles_clause}) THEN val{purpose_clause}"
+                            f"    WHEN CURRENT_ROLE() IN ({roles_clause}) THEN val"
                         )
 
                     lines.append(f"    ELSE {mask_expr}")
@@ -151,41 +133,21 @@ class SnowflakePolicyCompiler:
                     lines.append(f"  COMMENT = 'CES Managed User-Level Masking Policy for {policy_code}';")
                     lines.append("")
 
-                    if has_tag_resource and tags:
-                        for tag in tags:
-                            tag_str = (
-                                tag
-                                if isinstance(tag, str)
-                                else (tag.get("tag_name") or tag.get("tag_code") or "")
-                            )
-                            if not tag_str:
-                                continue
-                            tag_clean = tag_str.replace(".", "_").upper()
-                            lines.append(
-                                f"-- Bind Masking Policy directly to Snowflake Tag: {tag_str}"
-                            )
-                            lines.append(
-                                f"CREATE TAG IF NOT EXISTS GOVERNANCE_DB.TAGS.{tag_clean} COMMENT = 'CES Tag {tag_str}';"
-                            )
-                            lines.append(
-                                f"ALTER TAG GOVERNANCE_DB.TAGS.{tag_clean} SET MASKING POLICY {policy_name_sf};"
-                            )
-                    else:
-                        for res in resources or [
-                            {
-                                "database_name": "FINANCE_DB",
-                                "schema_name": "PUBLIC",
-                                "table_name": "CUSTOMER_PROFILES",
-                            }
-                        ]:
-                            db_name = (res.get("database_name") or "FINANCE_DB").upper()
-                            sch_name = (res.get("schema_name") or "PUBLIC").upper()
-                            tbl_name = (res.get("table_name") or "CUSTOMER_PROFILES").upper()
-                            full_path = f"{db_name}.{sch_name}.{tbl_name}"
-                            lines.append("-- Apply Masking Policy to Table Column")
-                            lines.append(
-                                f"ALTER TABLE {full_path} MODIFY COLUMN {mask_col} SET MASKING POLICY {policy_name_sf};"
-                            )
+                    for res in resources or [
+                        {
+                            "database_name": "FINANCE_DB",
+                            "schema_name": "PUBLIC",
+                            "table_name": "CUSTOMER_PROFILES",
+                        }
+                    ]:
+                        db_name = (res.get("database_name") or "FINANCE_DB").upper()
+                        sch_name = (res.get("schema_name") or "PUBLIC").upper()
+                        tbl_name = (res.get("table_name") or "CUSTOMER_PROFILES").upper()
+                        full_path = f"{db_name}.{sch_name}.{tbl_name}"
+                        lines.append("-- Apply Masking Policy to Table Column")
+                        lines.append(
+                            f"ALTER TABLE {full_path} MODIFY COLUMN {mask_col} SET MASKING POLICY {policy_name_sf};"
+                        )
 
                     if member_users:
                         for u in member_users:

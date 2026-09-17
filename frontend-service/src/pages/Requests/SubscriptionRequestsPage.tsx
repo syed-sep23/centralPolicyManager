@@ -12,7 +12,7 @@ import {
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
-import { requestsApi, metadataApi, purposesApi, rbacApi } from '../../api/client'
+import { requestsApi, metadataApi, rbacApi } from '../../api/client'
 
 const TAB_SLUG_TO_VALUE: Record<string, string> = {
   all: 'all',
@@ -62,11 +62,8 @@ export default function SubscriptionRequestsPage() {
   const [modalOpened, setModalOpened] = useState(false)
 
   // Form states
-  const [targetType, setTargetType] = useState<string>('PRODUCT')
   const [selectedUser, setSelectedUser] = useState<string>('1')
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
-  const [selectedTable, setSelectedTable] = useState<string | null>(null)
-  const [selectedPurpose, setSelectedPurpose] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [durationDays, setDurationDays] = useState<number | string>(30)
 
@@ -83,7 +80,6 @@ export default function SubscriptionRequestsPage() {
   })
 
   const products = useQuery({ queryKey: ['products'], queryFn: () => metadataApi.products() })
-  const purposes = useQuery({ queryKey: ['purposes'], queryFn: () => purposesApi.list() })
   const users = useQuery({ queryKey: ['users'], queryFn: () => rbacApi.users() })
 
   const invalidateAll = () => {
@@ -100,8 +96,6 @@ export default function SubscriptionRequestsPage() {
       setModalOpened(false)
       setReason('')
       setSelectedProduct(null)
-      setSelectedTable(null)
-      setSelectedPurpose(null)
     },
     onError: (err: any) => {
       notifications.show({ title: 'Request Failed', message: err.response?.data?.detail || err.message, color: 'red' })
@@ -139,9 +133,7 @@ export default function SubscriptionRequestsPage() {
     }
     createMutation.mutate({
       user_id: selectedUser ? parseInt(selectedUser) : 1,
-      product_id: targetType === 'PRODUCT' && selectedProduct ? parseInt(selectedProduct) : undefined,
-      table_id: targetType === 'TABLE' && selectedTable ? parseInt(selectedTable) : undefined,
-      purpose_id: selectedPurpose ? parseInt(selectedPurpose) : undefined,
+      product_id: selectedProduct ? parseInt(selectedProduct) : undefined,
       reason,
       duration_days: typeof durationDays === 'number' ? durationDays : 30,
     })
@@ -151,7 +143,6 @@ export default function SubscriptionRequestsPage() {
   const allRequests: any[] = allRequestsQuery.data?.data ?? []
   const userList: any[] = users.data?.data ?? []
   const productList: any[] = products.data?.data ?? []
-  const purposeList: any[] = purposes.data ?? []
 
   // Real Enterprise Metric Computations
   const activeGrantsCount = allRequests.filter((r: any) => r.status === 'APPROVED').length
@@ -167,10 +158,9 @@ export default function SubscriptionRequestsPage() {
           <Group gap="xs">
             <Title order={2}>Data Entitlement & Subscription Requests</Title>
             <Badge color="indigo" variant="light">Self-Service Access</Badge>
-            <Badge color="violet" variant="outline">PBAC Enforced</Badge>
           </Group>
           <Text c="dimmed" size="sm">
-            Request time-bound access to data products and tables with business purpose justification and automated workflow approval.
+            Request time-bound access to data products with justification and automated workflow approval.
           </Text>
         </Box>
         <Group gap="xs">
@@ -264,7 +254,6 @@ export default function SubscriptionRequestsPage() {
             <Table.Tr>
               <Table.Th>User / Requestor</Table.Th>
               <Table.Th>Data Asset / Target</Table.Th>
-              <Table.Th>Business Purpose (PBAC)</Table.Th>
               <Table.Th>Justification</Table.Th>
               <Table.Th>Expiration</Table.Th>
               <Table.Th>Status</Table.Th>
@@ -274,7 +263,7 @@ export default function SubscriptionRequestsPage() {
           <Table.Tbody>
             {reqList.length === 0 ? (
               <Table.Tr>
-                <Table.Td colSpan={7} style={{ textAlign: 'center', padding: '30px' }}>
+                <Table.Td colSpan={6} style={{ textAlign: 'center', padding: '30px' }}>
                   <Text c="dimmed">No entitlement requests found in this view.</Text>
                 </Table.Td>
               </Table.Tr>
@@ -291,15 +280,6 @@ export default function SubscriptionRequestsPage() {
                     <Badge color="indigo" variant="light">
                       {r.product_name || r.table_name || 'Enterprise Dataset'}
                     </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    {r.purpose_name ? (
-                      <Badge color="violet" variant="outline">
-                        {r.purpose_name}
-                      </Badge>
-                    ) : (
-                      <Text size="xs" c="dimmed">General Query</Text>
-                    )}
                   </Table.Td>
                   <Table.Td style={{ maxWidth: 220 }}>
                     <Text size="xs" lineClamp={2}>{r.reason}</Text>
@@ -352,37 +332,12 @@ export default function SubscriptionRequestsPage() {
             onChange={(val) => val && setSelectedUser(val)}
           />
 
-          <Box>
-            <Text size="xs" fw={500} mb={4}>Target Asset Scope</Text>
-            <SegmentedControl
-              fullWidth
-              size="xs"
-              value={targetType}
-              onChange={setTargetType}
-              data={[
-                { value: 'PRODUCT', label: 'Data Product' },
-                { value: 'PURPOSE_ONLY', label: 'Purpose Authorization' },
-              ]}
-            />
-          </Box>
-
-          {targetType === 'PRODUCT' && (
-            <Select
-              label="Data Product"
-              placeholder="Select Target Data Product"
-              data={productList.map((p: any) => ({ value: String(p.product_id), label: `${p.product_name} (${p.domain_name || 'Core Domain'})` }))}
-              value={selectedProduct}
-              onChange={setSelectedProduct}
-              clearable
-            />
-          )}
-
           <Select
-            label="Business Purpose (PBAC Compliance Scope)"
-            placeholder="Select Contextual Purpose (Optional)"
-            data={purposeList.map((p: any) => ({ value: String(p.purpose_id), label: `${p.purpose_name} (${p.purpose_code})` }))}
-            value={selectedPurpose}
-            onChange={setSelectedPurpose}
+            label="Target Data Product"
+            placeholder="Select Target Data Product"
+            data={productList.map((p: any) => ({ value: String(p.product_id), label: `${p.product_name} (${p.domain_name || 'Core Domain'})` }))}
+            value={selectedProduct}
+            onChange={setSelectedProduct}
             clearable
           />
 

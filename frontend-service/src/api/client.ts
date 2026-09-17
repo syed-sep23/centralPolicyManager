@@ -138,18 +138,20 @@ export const metadataApi = {
   tables:           (schemaId: number) => api.get(`/metadata/schemas/${schemaId}/tables`),
   columns:          (tableId: number) => api.get(`/metadata/tables/${tableId}/columns`),
   search:           (q: string, type?: string) => api.get('/metadata/search', { params: { q, type } }),
+  // Domains
   domains:          () => api.get('/metadata/domains'),
+  createDomain:     (data: any) => api.post('/metadata/domains', data),
+  updateDomain:     (id: number, data: any) => api.put(`/metadata/domains/${id}`, data),
+  deleteDomain:     (id: number) => api.delete(`/metadata/domains/${id}`),
+  // Products
   products:         (domainId?: number) => api.get('/metadata/products', { params: { domain_id: domainId } }),
-  tags:             (platformId?: number) => api.get('/metadata/tags', { params: { platform_id: platformId } }),
-  tagsTree:         () => api.get('/metadata/tags/tree'),
-  createTag:        (data: unknown) => api.post('/metadata/tags', data),
-  deleteTag:        (id: number) => api.delete(`/metadata/tags/${id}`),
-  discoverTags:     () => api.post('/metadata/tags/discover'),
-  syncPlatformTags: () => api.post('/metadata/tags/sync-platform'),
-  assignTag:        (data: unknown) => api.post('/metadata/tags/assign', data),
-  unassignTag:      (id: number) => api.delete(`/metadata/tags/assignments/${id}`),
-  tagAssets:        (id: number) => api.get(`/metadata/tags/${id}/assets`),
-  attributes:       () => api.get('/metadata/attributes'),
+  createProduct:    (data: any) => api.post('/metadata/products', data),
+  updateProduct:    (id: number, data: any) => api.put(`/metadata/products/${id}`, data),
+  deleteProduct:    (id: number) => api.delete(`/metadata/products/${id}`),
+  // Product ↔ Platform links
+  productPlatforms:     (productId: number) => api.get(`/metadata/products/${productId}/platforms`),
+  linkProductPlatform:  (productId: number, platformId: number) => api.post(`/metadata/products/${productId}/platforms/${platformId}`),
+  unlinkProductPlatform:(productId: number, platformId: number) => api.delete(`/metadata/products/${productId}/platforms/${platformId}`),
   dspmMetrics:      () => api.get('/metadata/dspm/posture-metrics'),
 }
 
@@ -188,15 +190,6 @@ export const validationApi = {
   simulate: (policyId: number, userId: number, tableId: number) =>
     api.post('/simulate', null, { params: { policy_id: policyId, user_id: userId, table_id: tableId } }),
   getAuditLogs: (policyId: number) => api.get(`/logs/${policyId}`),
-}
-
-// ─── Purposes (PBAC) ──────────────────────────────────────────────────────────
-export const purposesApi = {
-  list: () => api.get('/purposes').then((r) => r.data),
-  create: (data: unknown) => api.post('/purposes', data).then((r) => r.data),
-  users: (purposeId: number) => api.get(`/purposes/${purposeId}/users`).then((r) => r.data),
-  authorizeUser: (purposeId: number, userId: number) => api.post(`/purposes/${purposeId}/users`, { user_id: userId }),
-  revokeUser: (purposeId: number, userId: number) => api.delete(`/purposes/${purposeId}/users/${userId}`),
 }
 
 // ─── Data Entitlement Requests ────────────────────────────────────────────────

@@ -86,12 +86,6 @@ class RedshiftPolicyCompiler:
                 if code:
                     role_codes.append(f"ces_{code.lower()}")
 
-            purposes = [
-                c.get("compare_value")
-                for c in rule.get("conditions", [])
-                if c.get("attribute_key") == "purpose" and c.get("compare_value")
-            ]
-
             resources = rule.get("resources", [])
             if not resources:
                 resources = [
@@ -118,13 +112,6 @@ class RedshiftPolicyCompiler:
 
                         mask_policy_name = f"mask_{table_name}_{mask_col}"
 
-                        purpose_clause = ""
-                        if purposes:
-                            purpose_list = ", ".join([f"'{p}'" for p in purposes])
-                            purpose_clause = (
-                                f" OR CURRENT_SETTING('ces.purpose', true) IN ({purpose_list})"
-                            )
-
                         lines.append("-- Native Redshift Dynamic Data Masking (DDM) (Compiled per User)")
                         lines.append(f"CREATE MASKING POLICY {mask_policy_name}")
                         lines.append("WITH (val VARCHAR)")
@@ -141,7 +128,7 @@ class RedshiftPolicyCompiler:
                                     f"    -- User Entitlement: {disp_name} ({u.get('username')}) [Group: {grp_code}]"
                                 )
                                 lines.append(
-                                    f"    WHEN CURRENT_USER = '{rs_uid}'{purpose_clause} THEN val"
+                                    f"    WHEN CURRENT_USER = '{rs_uid}' THEN val"
                                 )
                         else:
                             role_checks = []
@@ -149,7 +136,7 @@ class RedshiftPolicyCompiler:
                                 role_checks.append(f"pg_has_role(CURRENT_USER, '{r}', 'MEMBER')")
                             role_checks_sql = " OR ".join(role_checks) if role_checks else "FALSE"
                             lines.append(
-                                f"    WHEN {role_checks_sql}{purpose_clause} THEN val"
+                                f"    WHEN {role_checks_sql} THEN val"
                             )
 
                         lines.append(f"    ELSE {mask_expr}")

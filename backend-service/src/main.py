@@ -12,7 +12,6 @@ from api.v1 import (
     deployments,
     metadata,
     policies,
-    purposes,
     requests,
     rules,
     scim,
@@ -66,7 +65,6 @@ def create_app() -> FastAPI:
 
     # API Routers
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
-    app.include_router(purposes.router, prefix="/api/v1/purposes", tags=["Purposes (PBAC)"])
     app.include_router(requests.router, prefix="/api/v1/requests", tags=["Entitlement Requests"])
     app.include_router(scim.router, prefix="/api/v1/scim/v2", tags=["SCIM 2.0 Identity Sync"])
     app.include_router(policies.router, prefix="/api/v1/policies", tags=["Policies"])

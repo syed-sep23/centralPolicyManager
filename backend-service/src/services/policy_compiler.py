@@ -201,24 +201,6 @@ async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[st
         r_dict["member_users"] = list(rule_users_dict.values())
         rules.append(r_dict)
 
-    tag_rows = (
-        (
-            await db.execute(
-                text("""
-            SELECT DISTINCT t.tag_name, t.tag_category, t.full_path AS tag_code
-            FROM policy_rules pr
-            JOIN policy_rule_resources prr ON prr.rule_id = pr.rule_id
-            JOIN policy_rule_resource_tags prt ON prt.resource_id = prr.resource_id
-            JOIN metadata_tags t ON t.tag_id = prt.tag_id
-            WHERE pr.version_id = :vid
-        """),
-                {"vid": version_id},
-            )
-        )
-        .mappings()
-        .all()
-    )
-
     target_rows = (
         (
             await db.execute(
@@ -247,7 +229,6 @@ async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[st
 
     raw = {k: _json_serial(v) for k, v in dict(ver_row).items()}
     raw["rules"] = rules
-    raw["tags"] = [dict(t) for t in tag_rows]
     raw["targets"] = [dict(t) for t in target_rows]
     raw["target_users"] = list(all_target_users.values())
     return raw
@@ -341,16 +322,6 @@ def generate_natural_language_summary(raw_payload: dict[str, Any]) -> str:
     enforce_mode = raw_payload.get("enforce_mode", "ENFORCE")
     rules = raw_payload.get("rules", [])
 
-    raw_tags = raw_payload.get("tags", [])
-    tags = []
-    for t in raw_tags:
-        if isinstance(t, str):
-            tags.append(t)
-        elif isinstance(t, dict):
-            val = t.get("tag_name") or t.get("tag_code") or ""
-            if val:
-                tags.append(val)
-
     target_users = raw_payload.get("target_users", [])
     summary = [
         f"Policy '{policy_name}' ({policy_code}) is configured in {enforce_mode} mode.",
@@ -360,9 +331,6 @@ def generate_natural_language_summary(raw_payload: dict[str, Any]) -> str:
     if target_users:
         u_list = [f"{u.get('display_name', u.get('username'))} ({u.get('username')})" for u in target_users]
         summary.append(f"Compiled individually for {len(target_users)} user(s): {', '.join(u_list)}.")
-
-    if tags:
-        summary.append(f"Bound to metadata tags: {', '.join(tags)}.")
 
     for idx, r in enumerate(rules, 1):
         if not isinstance(r, dict):

@@ -21,6 +21,7 @@ import {
   Alert,
   CopyButton,
   ThemeIcon,
+  TextInput,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -33,6 +34,7 @@ import {
   IconCloudCheck,
   IconDatabase,
   IconCopy,
+  IconSearch,
 } from '@tabler/icons-react'
 import { policiesApi, tasksApi, deploymentsApi } from '../../api/client'
 
@@ -64,6 +66,8 @@ export default function DeploymentsPage() {
   }
 
   const [platformFilter, setPlatformFilter] = useState<string>('ALL')
+  const [deploymentSearch, setDeploymentSearch] = useState('')
+  const [taskSearch, setTaskSearch] = useState('')
 
   // Query policies for real-time deployment status
   const policiesQuery = useQuery({
@@ -103,12 +107,32 @@ export default function DeploymentsPage() {
   const deployedPolicies = policies.filter((p: any) =>
     ['ENFORCED', 'DEPLOYING', 'FAILED', 'PARTIAL_SUCCESS'].includes(p.status)
   )
+  const filteredDeployments = deployedPolicies.filter((p: any) => {
+    if (!deploymentSearch.trim()) return true
+    const q = deploymentSearch.toLowerCase()
+    return (
+      (p.policy_name || '').toLowerCase().includes(q) ||
+      (p.policy_code || '').toLowerCase().includes(q) ||
+      (p.description || '').toLowerCase().includes(q) ||
+      (p.status || '').toLowerCase().includes(q)
+    )
+  })
 
   const historyItems = historyQuery.data?.data ?? []
-  const filteredHistory =
-    platformFilter === 'ALL'
-      ? historyItems
-      : historyItems.filter((h: any) => h.platform_code === platformFilter)
+  const filteredHistory = historyItems
+    .filter((h: any) => platformFilter === 'ALL' || h.platform_code === platformFilter)
+    .filter((h: any) => {
+      if (!taskSearch.trim()) return true
+      const q = taskSearch.toLowerCase()
+      return (
+        (h.task_id || '').toLowerCase().includes(q) ||
+        (h.task_name || '').toLowerCase().includes(q) ||
+        (h.platform_code || '').toLowerCase().includes(q) ||
+        (h.status || '').toLowerCase().includes(q) ||
+        (h.result_summary || '').toLowerCase().includes(q) ||
+        (h.error_message || '').toLowerCase().includes(q)
+      )
+    })
 
   // Aggregate metrics
   const totalTablesSynced = historyItems.reduce(
@@ -239,17 +263,39 @@ export default function DeploymentsPage() {
 
         {/* Tab 1: Real-time Deployments Across All Platforms */}
         <Tabs.Panel value="deployments" pt="md">
-          <Stack gap="sm">
+          <Stack gap="md">
+            {/* Toolbar */}
+            <Group justify="space-between" wrap="wrap">
+              <Box>
+                <Text fw={600} size="sm">Policy Deployment Executions</Text>
+                <Text size="xs" c="dimmed">Status of compiled access policies pushed across cloud databases</Text>
+              </Box>
+              <TextInput
+                placeholder="Search deployments..."
+                leftSection={<IconSearch size={14} />}
+                value={deploymentSearch}
+                onChange={(e) => setDeploymentSearch(e.target.value)}
+                size="xs"
+                radius="md"
+                w={260}
+                rightSection={deploymentSearch ? (
+                  <ActionIcon variant="subtle" size="xs" onClick={() => setDeploymentSearch('')}>
+                    <IconX size={12} />
+                  </ActionIcon>
+                ) : null}
+              />
+            </Group>
+
             {policiesQuery.isLoading ? (
               [...Array(4)].map((_, i) => <Skeleton key={i} height={80} radius="md" />)
-            ) : deployedPolicies.length === 0 ? (
+            ) : filteredDeployments.length === 0 ? (
               <Card className="enterprise-card" p="xl" ta="center">
                 <Text c="dimmed">
-                  No active policy deployments found. Publish and submit a policy to trigger Celery Worker deployment.
+                  {deploymentSearch ? `No deployments match "${deploymentSearch}".` : 'No active policy deployments found. Publish and submit a policy to trigger Celery Worker deployment.'}
                 </Text>
               </Card>
             ) : (
-              deployedPolicies.map((p: any) => (
+              filteredDeployments.map((p: any) => (
                 <Card key={p.policy_id} className="enterprise-card" p="md" radius="md">
                   <Group justify="space-between" align="flex-start" wrap="wrap">
                     <Box>
@@ -311,12 +357,10 @@ export default function DeploymentsPage() {
             </Alert>
 
             <Group justify="space-between">
-              <Group gap="xs">
-                <Text size="sm" fw={500}>
-                  Platform Filter:
-                </Text>
+              <Group gap="sm" align="flex-end">
                 <Select
                   size="xs"
+                  label="Filter by Platform"
                   value={platformFilter}
                   onChange={(val) => setPlatformFilter(val || 'ALL')}
                   data={[
@@ -324,7 +368,21 @@ export default function DeploymentsPage() {
                     { value: 'SNOWFLAKE', label: 'Snowflake' },
                     { value: 'REDSHIFT', label: 'Amazon Redshift' },
                   ]}
-                  style={{ width: 180 }}
+                  style={{ width: 160 }}
+                />
+                <TextInput
+                  size="xs"
+                  label="Search Tasks"
+                  placeholder="Search by ID, name, status..."
+                  leftSection={<IconSearch size={14} />}
+                  value={taskSearch}
+                  onChange={(e) => setTaskSearch(e.target.value)}
+                  w={240}
+                  rightSection={taskSearch ? (
+                    <ActionIcon variant="subtle" size="xs" onClick={() => setTaskSearch('')}>
+                      <IconX size={12} />
+                    </ActionIcon>
+                  ) : null}
                 />
               </Group>
               <Text size="xs" c="dimmed">

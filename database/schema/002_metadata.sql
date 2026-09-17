@@ -103,38 +103,6 @@ CREATE TABLE IF NOT EXISTS metadata_columns (
     UNIQUE(table_id, column_name)
 );
 
--- ─── Tags (Hierarchical Taxonomy) ─────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS metadata_tags (
-    tag_id              SERIAL PRIMARY KEY,
-    platform_id         INTEGER REFERENCES metadata_platforms(platform_id) ON DELETE CASCADE,
-    tag_name            VARCHAR(255) NOT NULL,
-    full_path           VARCHAR(500) NOT NULL UNIQUE,
-    parent_tag_id       INTEGER REFERENCES metadata_tags(tag_id) ON DELETE CASCADE,
-    tag_category        VARCHAR(100),
-    source_type         VARCHAR(50) NOT NULL DEFAULT 'MANUAL'
-                        CHECK (source_type IN ('MANUAL','DISCOVERED','AUTOMATED_DISCOVERY','EXTERNAL_CATALOG','SYSTEM')),
-    description         TEXT,
-    allowed_values      TEXT,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- ─── Tag Assignments ──────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS metadata_tag_assignments (
-    assignment_id       SERIAL PRIMARY KEY,
-    tag_id              INTEGER NOT NULL REFERENCES metadata_tags(tag_id) ON DELETE CASCADE,
-    table_id            INTEGER REFERENCES metadata_tables(table_id) ON DELETE CASCADE,
-    column_id           INTEGER REFERENCES metadata_columns(column_id) ON DELETE CASCADE,
-    tag_value           VARCHAR(255),
-    confidence_score    DOUBLE PRECISION DEFAULT 1.0,
-    assigned_by         VARCHAR(100) DEFAULT 'SYSTEM',
-    assigned_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    assigned_at_source  TIMESTAMPTZ,
-    last_synced_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (table_id IS NOT NULL OR column_id IS NOT NULL)
-);
-
-
 -- ─── Data Product ↔ Table Mappings ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS data_product_table_mappings (
     mapping_id          SERIAL PRIMARY KEY,
@@ -172,21 +140,8 @@ CREATE INDEX IF NOT EXISTS idx_meta_db_platform     ON metadata_databases(platfo
 CREATE INDEX IF NOT EXISTS idx_meta_schema_db       ON metadata_schemas(database_id);
 CREATE INDEX IF NOT EXISTS idx_meta_table_schema    ON metadata_tables(schema_id);
 CREATE INDEX IF NOT EXISTS idx_meta_col_table       ON metadata_columns(table_id);
-CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_col  ON metadata_tag_assignments(column_id);
-CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_tbl  ON metadata_tag_assignments(table_id);
 CREATE INDEX IF NOT EXISTS idx_pum_user_id           ON platform_user_mappings(user_id);
 CREATE INDEX IF NOT EXISTS idx_pum_platform_code     ON platform_user_mappings(platform_code);
-
--- ─── Automated Tag Discovery Identifiers & Rules ──────────────────────────────
-CREATE TABLE IF NOT EXISTS metadata_tag_rules (
-    rule_id             SERIAL PRIMARY KEY,
-    tag_path            VARCHAR(255) NOT NULL UNIQUE,
-    category            VARCHAR(50)  NOT NULL,
-    regex_pattern       VARCHAR(500) NOT NULL,
-    description         TEXT,
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 -- ─── Celery Task Execution History (Beat Cron & Worker Runs) ─────────────────
 CREATE TABLE IF NOT EXISTS celery_task_history (

@@ -2,12 +2,12 @@ import { useState, useMemo } from 'react'
 import {
   Stack, Title, Text, Group, Button, Badge, Card, SimpleGrid, Modal,
   TextInput, Select, MultiSelect, PasswordInput, NumberInput, Paper, ActionIcon, Tooltip,
-  SegmentedControl, Box, Alert, Loader, Divider, ThemeIcon, Code,
+  Box, Alert, Loader, Divider, ThemeIcon, Code,
 } from '@mantine/core'
 import {
   IconPlus, IconPlugConnected, IconCheck, IconX,
   IconRefresh, IconEdit, IconTrash, IconBrandAws, IconCloud, IconServer, IconBrandGoogle,
-  IconUser, IconUsers, IconInfoCircle, IconShieldCheck, IconLock,
+  IconUser, IconUsers, IconCopy, IconSearch,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
@@ -27,10 +27,18 @@ function IconDatabase(props: any) {
   return <IconServer {...props} />
 }
 
+type ModalMode = 'create' | 'edit' | 'clone'
+
 export default function PlatformsPage() {
   const queryClient = useQueryClient()
   const [modalOpened, setModalOpened] = useState(false)
+  const [modalMode, setModalMode] = useState<ModalMode>('create')
   const [editingPlatformId, setEditingPlatformId] = useState<number | null>(null)
+
+  // Platform search
+  const [platformSearch, setPlatformSearch] = useState('')
+
+
 
   // Driver Selection
   const [platformType, setPlatformType] = useState<string>('SNOWFLAKE')
@@ -148,7 +156,6 @@ export default function PlatformsPage() {
       const connStatus = isSuccess ? 'CONNECTED' : 'FAILED'
       const testedAt = new Date().toISOString()
 
-      // If testing an existing platform in the modal, persist the status and date to the database immediately!
       if (editingPlatformId) {
         try {
           await metadataApi.updatePlatform(editingPlatformId, {
@@ -291,6 +298,24 @@ export default function PlatformsPage() {
     syncPlatformMutation.mutate(p.platform_id)
   }
 
+  const populateFormFromPlatform = (p: any) => {
+    const driver = p.driver_code || PLATFORM_OPTIONS.find((o) => (p.platform_code || '').toUpperCase().includes(o.value))?.value || 'CUSTOM_JDBC'
+    setPlatformType(driver)
+    setConnectionAlias(p.connection_alias || '')
+    setAssignedUserId(p.assigned_user_id ? String(p.assigned_user_id) : null)
+    setAssignedGroupIds((p.assigned_group_ids || []).map(String))
+    setAccountIdentifier(p.account_identifier || (driver === 'SNOWFLAKE' ? 'demo.us-east-1' : ''))
+    setWarehouse(p.warehouse || (driver === 'SNOWFLAKE' ? 'CES_WH' : ''))
+    setDefaultDatabase(p.default_database || (driver === 'SNOWFLAKE' ? 'FINANCE_DB' : driver === 'REDSHIFT' ? 'acme_dw' : ''))
+    setRole(p.role_name || (driver === 'SNOWFLAKE' ? 'SYSADMIN' : ''))
+    setHost(p.host || (driver === 'REDSHIFT' ? 'localhost' : ''))
+    setPort(p.port || (driver === 'REDSHIFT' ? 5439 : ''))
+    setHttpPath(p.http_path || '')
+    setCatalogName(p.catalog_name || '')
+    setDbUser(p.db_user || (driver === 'SNOWFLAKE' || driver === 'REDSHIFT' ? 'ces_svc' : ''))
+    setDbPassword(p.db_password || '')
+  }
+
   const resetForm = () => {
     setEditingPlatformId(null)
     setPlatformCode('')
@@ -355,6 +380,7 @@ export default function PlatformsPage() {
   const handleOpenCreate = () => {
     resetForm()
     setPlatformType('SNOWFLAKE')
+    setModalMode('create')
     setModalOpened(true)
   }
 
@@ -363,27 +389,21 @@ export default function PlatformsPage() {
     setEditingPlatformId(p.platform_id)
     setPlatformCode(p.platform_code || '')
     setPlatformName(p.platform_name || '')
-    setConnectionAlias(p.connection_alias || '')
-    const driver = p.driver_code || PLATFORM_OPTIONS.find((o) => (p.platform_code || '').toUpperCase().includes(o.value))?.value || 'CUSTOM_JDBC'
-    setPlatformType(driver)
-
-    setAssignedUserId(p.assigned_user_id ? String(p.assigned_user_id) : null)
-    setAssignedGroupIds((p.assigned_group_ids || []).map(String))
-
-    setAccountIdentifier(p.account_identifier || (driver === 'SNOWFLAKE' ? 'demo.us-east-1' : ''))
-    setWarehouse(p.warehouse || (driver === 'SNOWFLAKE' ? 'CES_WH' : ''))
-    setDefaultDatabase(p.default_database || (driver === 'SNOWFLAKE' ? 'FINANCE_DB' : driver === 'REDSHIFT' ? 'acme_dw' : ''))
-    setRole(p.role_name || (driver === 'SNOWFLAKE' ? 'SYSADMIN' : ''))
-
-    setHost(p.host || (driver === 'REDSHIFT' ? 'localhost' : ''))
-    setPort(p.port || (driver === 'REDSHIFT' ? 5439 : ''))
-    setHttpPath(p.http_path || '')
-    setCatalogName(p.catalog_name || '')
-
-    setDbUser(p.db_user || (driver === 'SNOWFLAKE' || driver === 'REDSHIFT' ? 'ces_svc' : ''))
-    setDbPassword(p.db_password || '')
-
+    populateFormFromPlatform(p)
     setTestResult(null)
+    setModalMode('edit')
+    setModalOpened(true)
+  }
+
+  // Clone: directly open the same main onboard/edit modal in clone mode with parameters pre-filled
+  const handleClone = (p: any) => {
+    resetForm()
+    setEditingPlatformId(null)
+    setPlatformCode(`${p.platform_code}_CLONE`)
+    setPlatformName(`${p.platform_name} (Clone)`)
+    populateFormFromPlatform(p)
+    setTestResult(null)
+    setModalMode('clone')
     setModalOpened(true)
   }
 
@@ -432,7 +452,7 @@ export default function PlatformsPage() {
       }
 
       let savedPlatformId = editingPlatformId
-      if (editingPlatformId) {
+      if (editingPlatformId && modalMode === 'edit') {
         const updateRes: any = await metadataApi.updatePlatform(editingPlatformId, payload)
         savedPlatformId = updateRes.data?.platform_id || editingPlatformId
       } else {
@@ -440,7 +460,6 @@ export default function PlatformsPage() {
         savedPlatformId = createRes.data?.platform_id
       }
 
-      // Validate credentials directly against respective connector
       notifications.show({
         id: 'validating-conn',
         loading: true,
@@ -519,6 +538,18 @@ export default function PlatformsPage() {
 
   const pList = getList(platforms.data)
 
+  // Filtered platform list
+  const filteredPlatforms = useMemo(() => {
+    if (!platformSearch.trim()) return pList
+    const q = platformSearch.toLowerCase()
+    return pList.filter((p: any) =>
+      (p.platform_name || '').toLowerCase().includes(q) ||
+      (p.platform_code || '').toLowerCase().includes(q) ||
+      (p.connection_alias || '').toLowerCase().includes(q) ||
+      (p.driver_code || '').toLowerCase().includes(q)
+    )
+  }, [pList, platformSearch])
+
   const isPlatformCodeValid = platformCode.trim().length >= 2
   const isPlatformNameValid = platformName.trim().length >= 2
 
@@ -541,6 +572,12 @@ export default function PlatformsPage() {
   const isCanTestConnection = isPlatformCodeValid && isDriverConfigValid()
   const isCanSave = isPlatformCodeValid && isPlatformNameValid && isDriverConfigValid()
 
+  const modalTitle = modalMode === 'edit'
+    ? `Edit Connection: ${platformName}`
+    : modalMode === 'clone'
+    ? `Clone Connection: ${platformName}`
+    : 'Onboard Cloud Data Platform'
+
   return (
     <Stack gap="lg">
       {/* Header */}
@@ -561,9 +598,27 @@ export default function PlatformsPage() {
         </Group>
       </Group>
 
+      {/* Search */}
+      <TextInput
+        placeholder="Search platforms by name, code, driver..."
+        leftSection={<IconSearch size={16} />}
+        value={platformSearch}
+        onChange={(e) => setPlatformSearch(e.target.value)}
+        radius="md"
+        id="platforms-search"
+        rightSection={platformSearch ? (
+          <ActionIcon variant="subtle" size="sm" onClick={() => setPlatformSearch('')}>
+            <IconX size={14} />
+          </ActionIcon>
+        ) : null}
+      />
+      {platformSearch && (
+        <Text size="xs" c="dimmed">{filteredPlatforms.length} of {pList.length} platforms match "{platformSearch}"</Text>
+      )}
+
       {/* Grid of Platform Connections */}
       <SimpleGrid cols={{ base: 1, md: 2, lg: 3 }} spacing="lg">
-        {pList.map((p: any) => {
+        {filteredPlatforms.map((p: any) => {
           const opt = PLATFORM_OPTIONS.find((o) => p.platform_code.includes(o.value)) || PLATFORM_OPTIONS[0]
           const IconComp = opt.icon
 
@@ -669,6 +724,11 @@ export default function PlatformsPage() {
                   </Button>
                 </Group>
                 <Group gap={6}>
+                  <Tooltip label="Clone Connection">
+                    <ActionIcon variant="subtle" color="violet" onClick={() => handleClone(p)}>
+                      <IconCopy size={16} />
+                    </ActionIcon>
+                  </Tooltip>
                   <Tooltip label="Edit Connection Credentials">
                     <ActionIcon variant="subtle" color="blue" onClick={() => handleEdit(p)}>
                       <IconEdit size={16} />
@@ -684,18 +744,28 @@ export default function PlatformsPage() {
             </Paper>
           )
         })}
+        {filteredPlatforms.length === 0 && (
+          <Card className="enterprise-card" p="xl" radius="md" style={{ gridColumn: '1 / -1' }}>
+            <Stack align="center" gap="xs">
+              <IconSearch size={32} opacity={0.3} />
+              <Text c="dimmed">{platformSearch ? `No platforms match "${platformSearch}"` : 'No platforms found. Onboard your first data platform.'}</Text>
+            </Stack>
+          </Card>
+        )}
       </SimpleGrid>
 
-      {/* Dynamic Driver Onboarding Modal */}
+
+
+      {/* ── Dynamic Driver Onboarding / Edit / Clone Modal ─────────────────── */}
       <Modal
         opened={modalOpened}
         onClose={closeModal}
-        title={editingPlatformId ? `Edit Connection: ${platformName}` : 'Onboard Cloud Data Platform'}
+        title={modalTitle}
         radius="md"
         size="lg"
       >
         <Stack gap="md">
-          {!editingPlatformId && (
+          {modalMode !== 'edit' && (
             <Select
               label="Select Target Platform Driver"
               placeholder="Select Data Engine"
@@ -713,6 +783,7 @@ export default function PlatformsPage() {
               error={!isPlatformCodeValid && platformCode.length > 0 ? 'Platform Code is required (min 2 chars)' : undefined}
               value={platformCode}
               onChange={(e) => setPlatformCode(e.target.value)}
+              disabled={modalMode === 'edit'}
             />
             <TextInput
               label="Platform Display Name"
@@ -723,19 +794,6 @@ export default function PlatformsPage() {
               onChange={(e) => setPlatformName(e.target.value)}
             />
           </Group>
-
-          <MultiSelect
-            label="Authorized Identity Groups (0..N)"
-            placeholder="Assign groups authorized for this data platform..."
-            data={groupList.map((g) => ({
-              value: String(g.role_id),
-              label: `${g.role_name} (${g.role_code})`,
-            }))}
-            value={assignedGroupIds}
-            onChange={setAssignedGroupIds}
-            searchable
-            clearable
-          />
 
           <Divider label="Driver Parameters" labelPosition="center" my="xs" />
 
@@ -852,12 +910,12 @@ export default function PlatformsPage() {
             <Group gap="xs">
               <Button variant="default" onClick={closeModal}>Cancel</Button>
               <Button
-                color="indigo"
+                color={modalMode === 'clone' ? 'violet' : 'indigo'}
                 loading={isSaving}
                 onClick={handleSave}
                 disabled={!isCanSave || isSaving}
               >
-                {editingPlatformId ? 'Update & Validate Credentials' : 'Save & Onboard Platform'}
+                {modalMode === 'edit' ? 'Update & Validate Credentials' : modalMode === 'clone' ? 'Save Clone & Validate' : 'Save & Onboard Platform'}
               </Button>
             </Group>
           </Group>

@@ -2,14 +2,13 @@ package policy.decision
 
 import rego.v1
 import data.policy.masking
-import data.policy.pbac
 import data.policy.rbac
 import data.policy.rls
 
 # ==============================================================================
 # CES-Grade Unified Governance Decision Engine
-# Evaluates identity entitlements, dynamic ABAC attributes, contextual PBAC purposes,
-# data masking, and row-level security into a single, high-performance decision.
+# Evaluates identity entitlements, data masking, and row-level security
+# into a single, high-performance decision.
 # ==============================================================================
 
 # ─── Default Decisions ────────────────────────────────────────────────────────
@@ -21,7 +20,6 @@ default row_filter_clause := null
 # ─── Master Authorization Rule ────────────────────────────────────────────────
 allow if {
     rbac.allow
-    pbac.purpose_permitted
     not rbac.deny
 }
 
@@ -55,11 +53,6 @@ audit_reasons contains "Access explicitly denied by matching DENY rule." if {
     rbac.deny
 }
 
-audit_reasons contains pbac.rejection_reason if {
-    not pbac.purpose_permitted
-    pbac.rejection_reason != null
-}
-
 audit_reasons contains sprintf("Column '%v' masked using transformation '%v'.", [input.resource.column, masking.mask_action]) if {
     masking.is_masked
 }
@@ -80,11 +73,6 @@ evaluation_result := {
     "resource": {
         "table": input.resource.table,
         "column": input.resource.column,
-        "tags": input.resource.tags,
-    },
-    "context": {
-        "purpose": input.context.purpose,
-        "purpose_permitted": pbac.purpose_permitted,
     },
     "governance": {
         "is_masked": masking.is_masked,

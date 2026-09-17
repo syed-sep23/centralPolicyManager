@@ -89,10 +89,3 @@ _is_caller_exempt(rule) if {
     unrestricted
 }
 
-_is_caller_exempt(rule) if {
-    some c in rule.conditions
-    c.attribute_key == "purpose"
-    c.operator == "EQ"
-    input.context.purpose == c.compare_value
-}
-

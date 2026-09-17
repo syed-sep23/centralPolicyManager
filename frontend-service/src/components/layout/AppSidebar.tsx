@@ -1,18 +1,16 @@
-import { NavLink, Stack, Text, Group, Avatar, Box, Divider, Badge, ActionIcon, Tooltip, ThemeIcon } from '@mantine/core'
+import { NavLink, Stack, Text, Group, Box, Divider, Badge, ActionIcon, Tooltip, ThemeIcon } from '@mantine/core'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   IconShieldCheck, IconDatabase, IconUsers, IconClipboardList,
-  IconLayoutDashboard, IconShield, IconTarget, IconSend, IconPlugConnected, IconTag,
+  IconShield, IconSend, IconPlugConnected,
   IconRefresh,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
-import { useAuthStore } from '../../store/authStore'
 import { requestsApi } from '../../api/client'
 
 export default function AppSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user } = useAuthStore()
 
   // Manual query for pending access requests count (no polling)
   const pendingQuery = useQuery({
@@ -23,9 +21,15 @@ export default function AppSidebar() {
 
   const navSections = [
     {
-      title: 'GOVERNANCE & DSPM',
+      title: 'DATA PLATFORMS & ASSETS',
       items: [
-        { label: 'DSPM Security Posture', href: '/dashboard', icon: IconLayoutDashboard },
+        { label: 'Data Platforms', href: '/platforms', icon: IconPlugConnected },
+        { label: 'Data Catalogue', href: '/catalog', icon: IconDatabase },
+      ],
+    },
+    {
+      title: 'POLICY & ACCESS GOVERNANCE',
+      items: [
         { label: 'Data Policies', href: '/policies', icon: IconShieldCheck },
         {
           label: 'Access Requests',
@@ -34,22 +38,13 @@ export default function AppSidebar() {
           badge: pendingCount > 0 ? `${pendingCount} Pending` : undefined,
           badgeColor: 'yellow',
         },
-        { label: 'Purpose Rules (PBAC)', href: '/purposes', icon: IconTarget },
-      ],
-    },
-    {
-      title: 'DATA ASSETS & TAGS',
-      items: [
-        { label: 'Data Catalog', href: '/catalog', icon: IconDatabase },
-        { label: 'Tags & Classifications', href: '/tags', icon: IconTag },
-        { label: 'Data Platforms', href: '/platforms', icon: IconPlugConnected },
       ],
     },
     {
       title: 'PEOPLE & OPERATIONS',
       items: [
-        { label: 'Users & Groups', href: '/roles', icon: IconUsers },
-        { label: 'Deployment & Task Logs', href: '/deployments', icon: IconClipboardList },
+        { label: 'Users and Groups', href: '/roles', icon: IconUsers },
+        { label: 'Deployments and Task logs', href: '/deployments', icon: IconClipboardList },
       ],
     },
   ]
@@ -64,10 +59,10 @@ export default function AppSidebar() {
           </ThemeIcon>
           <Box>
             <Group gap={4}>
-              <Text fw={700} size="sm" lh={1.2}>CES DSPM</Text>
+              <Text fw={700} size="sm" lh={1.2}>CES</Text>
               <Badge size="xs" color="teal" variant="light">Enterprise</Badge>
             </Group>
-            <Text size="10px" c="dimmed" lh={1.2}>Data Security & Access Engine</Text>
+            <Text size="10px" c="dimmed" lh={1.2}>Central Entitlement Service</Text>
           </Box>
         </Group>
 
@@ -124,24 +119,6 @@ export default function AppSidebar() {
             </Box>
           ))}
         </Stack>
-      </Box>
-
-      {/* User profile footer */}
-      <Box>
-        <Divider mb="xs" />
-        <Group justify="space-between" px="xs" py="xs">
-          <Group gap="xs">
-            <Avatar color="indigo" radius="md" size="sm">
-              {user?.username?.[0]?.toUpperCase() ?? 'A'}
-            </Avatar>
-            <Box>
-              <Text size="xs" fw={600} lh={1.2}>{user?.username ?? 'admin'}</Text>
-              <Text size="10px" c="dimmed" lh={1.2}>
-                {user?.roles?.[0] ?? 'Governance Admin'}
-              </Text>
-            </Box>
-          </Group>
-        </Group>
       </Box>
     </Stack>
   )

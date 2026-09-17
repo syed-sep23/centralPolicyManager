@@ -97,11 +97,6 @@ _resolve_attr(c) := val if {
     val := input.context[c.attribute_key]
 }
 
-_resolve_attr(c) := val if {
-    c.attribute_key == "purpose"
-    val := input.context.purpose
-}
-
 # Operators:
 _condition_passes(c) if {
     c.operator == "EQ"

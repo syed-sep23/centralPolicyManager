@@ -18,7 +18,6 @@ class RequestCreate(BaseModel):
     user_id: int = 1
     table_id: Optional[int] = None
     product_id: Optional[int] = None
-    purpose_id: Optional[int] = None
     reason: str
     duration_days: int = 30
 
@@ -34,8 +33,6 @@ async def list_requests(status: Optional[str] = Query(None), db: AsyncSession = 
             u.email,
             r.product_id,
             p.product_name,
-            pr.purpose_name,
-            pr.purpose_code,
             r.justification AS reason,
             r.status,
             r.reviewed_by_id AS approved_by,
@@ -44,7 +41,6 @@ async def list_requests(status: Optional[str] = Query(None), db: AsyncSession = 
         FROM data_access_requests r
         JOIN users u ON r.requestor_id = u.user_id
         LEFT JOIN data_products p ON r.product_id = p.product_id
-        LEFT JOIN purposes pr ON r.purpose_id = pr.purpose_id
     """
     params = {}
     if status and status.upper() != "ALL":
@@ -61,15 +57,14 @@ async def create_request(body: RequestCreate, db: AsyncSession = Depends(get_db)
     req_num = f"REQ-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     res = await db.execute(
         text("""
-            INSERT INTO data_access_requests (request_number, requestor_id, product_id, purpose_id, justification, valid_for_days, status)
-            VALUES (:num, :u, :p, :purp, :r, :days, 'PENDING')
+            INSERT INTO data_access_requests (request_number, requestor_id, product_id, justification, valid_for_days, status)
+            VALUES (:num, :u, :p, :r, :days, 'PENDING')
             RETURNING request_id, request_number, status, created_at
         """),
         {
             "num": req_num,
             "u": body.user_id,
             "p": body.product_id,
-            "purp": body.purpose_id,
             "r": body.reason,
             "days": max(1, body.duration_days),
         },

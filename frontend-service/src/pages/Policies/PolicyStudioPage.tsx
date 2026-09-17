@@ -7,13 +7,13 @@ import {
 } from '@mantine/core'
 import {
   IconShieldLock, IconFilter, IconKey, IconSparkles, IconCheck,
-  IconArrowLeft, IconArrowRight, IconSend, IconCode, IconTag,
+  IconArrowLeft, IconArrowRight, IconSend, IconCode,
   IconServer, IconUserCheck, IconTarget, IconEye,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
-import { policiesApi, metadataApi, rbacApi, purposesApi, connectorApi } from '../../api/client'
+import { policiesApi, metadataApi, rbacApi, connectorApi } from '../../api/client'
 
 // ─── Policy Archetypes ────────────────────────────────────────────────────────
 type PolicyArchetype = 'DATA_MASKING' | 'ROW_FILTER' | 'SUBSCRIPTION_ACCESS'
@@ -22,7 +22,7 @@ const ARCHETYPES = [
   {
     type: 'DATA_MASKING' as PolicyArchetype,
     title: 'Data Masking Policy',
-    desc: 'Obfuscate sensitive columns (Hash, Email Redact, Partial, Nullify) based on global tags or column names.',
+    desc: 'Obfuscate sensitive columns (Hash, Email Redact, Partial, Nullify) based on column names or rules.',
     icon: IconShieldLock,
     color: 'violet',
     badge: 'Column-Level Security',
@@ -38,7 +38,7 @@ const ARCHETYPES = [
   {
     type: 'SUBSCRIPTION_ACCESS' as PolicyArchetype,
     title: 'Data Subscription Policy',
-    desc: 'Grant or deny direct table access across data products to authorized roles or business purposes.',
+    desc: 'Grant or deny direct table access across data products to authorized roles.',
     icon: IconKey,
     color: 'teal',
     badge: 'Table Entitlement',
@@ -69,9 +69,7 @@ export default function PolicyStudioPage() {
   const [enforceMode, setEnforceMode] = useState<'ADVISORY' | 'ENFORCED'>('ENFORCED')
   const [archetype, setArchetype] = useState<PolicyArchetype>('DATA_MASKING')
 
-  // ─── Step 2: Global Scope & Triggers ─────────────────────────────────────────
-  const [scopeType, setScopeType] = useState<'GLOBAL_TAG' | 'TARGETED'>('GLOBAL_TAG')
-  const [selectedTags, setSelectedTags] = useState<string[]>(['PII.EMAIL'])
+  // ─── Step 2: Platform Scope & Triggers ───────────────────────────────────────
   const [domainId, setDomainId] = useState<string | null>(null)
   const [productId, setProductId] = useState<string | null>(null)
   const [targetPlatforms, setTargetPlatforms] = useState<string[]>([])
@@ -87,7 +85,6 @@ export default function PolicyStudioPage() {
 
   // Exceptions / Circumstances
   const [exemptRoles, setExemptRoles] = useState<string[]>([])
-  const [exemptPurposes, setExemptPurposes] = useState<string[]>([])
   const [userAttrKey, setUserAttrKey] = useState('')
   const [userAttrOp, setUserAttrOp] = useState('EQ')
   const [userAttrVal, setUserAttrVal] = useState('')
@@ -106,8 +103,6 @@ export default function PolicyStudioPage() {
   const products = useQuery({ queryKey: ['products', domainId], queryFn: () => metadataApi.products(domainId ? parseInt(domainId) : undefined), enabled: !!domainId })
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
   const roles = useQuery({ queryKey: ['roles'], queryFn: () => rbacApi.roles() })
-  const tags = useQuery({ queryKey: ['tags'], queryFn: () => metadataApi.tags() })
-  const purposes = useQuery({ queryKey: ['purposes'], queryFn: () => purposesApi.list() })
   const existing = useQuery({
     queryKey: ['policy-detail', policyId],
     queryFn: () => policiesApi.get(policyId!),
@@ -147,13 +142,6 @@ export default function PolicyStudioPage() {
 
         const roleCodes = (r.subjects ?? []).map((s: any) => s.role_code).filter(Boolean)
         setExemptRoles(roleCodes)
-
-        if (r.resources && Array.isArray(r.resources)) {
-          const tagRes = r.resources.filter((res: any) => res.resource_scope === 'TAG')
-          if (tagRes.length > 0) {
-            setScopeType('GLOBAL_TAG')
-          }
-        }
       }
     }
   }, [isEditing, existing.data])
@@ -172,33 +160,6 @@ export default function PolicyStudioPage() {
     return opts
   }, [roles.data])
 
-  const purposeOptions = useMemo(() => {
-    const raw = purposes.data?.data ?? (Array.isArray(purposes.data) ? purposes.data : [])
-    const seen = new Set<string>()
-    const opts: { value: string; label: string }[] = []
-    raw.forEach((pr: any) => {
-      if (pr?.purpose_code && !seen.has(pr.purpose_code)) {
-        seen.add(pr.purpose_code)
-        opts.push({ value: pr.purpose_code, label: `${pr.purpose_name} (${pr.purpose_code})` })
-      }
-    })
-    return opts
-  }, [purposes.data])
-
-  const tagOptions = useMemo(() => {
-    const raw = tags.data?.data ?? (Array.isArray(tags.data) ? tags.data : [])
-    const seen = new Set<string>()
-    const opts: { value: string; label: string }[] = []
-    raw.forEach((t: any) => {
-      const val = t?.full_path || t?.tag_name
-      if (val && !seen.has(val)) {
-        seen.add(val)
-        opts.push({ value: val, label: `${val} (${t.tag_category || 'General'})` })
-      }
-    })
-    return opts
-  }, [tags.data])
-
   const platformOptions = useMemo(() => {
     const raw = platforms.data?.data ?? (Array.isArray(platforms.data) ? platforms.data : [])
     const seen = new Set<string>()
@@ -215,13 +176,12 @@ export default function PolicyStudioPage() {
 
   // ─── Live Natural Language Summary Builder (CES DSL) ──────────────────────
   const naturalLanguageText = useMemo(() => {
-    const targetScopeStr = scopeType === 'GLOBAL_TAG'
-      ? (selectedTags.length ? `columns/tables tagged with [${selectedTags.join(', ')}]` : 'all tagged data assets')
-      : 'selected connected platforms'
+    const targetScopeStr = targetPlatforms.length
+      ? `selected platforms [${targetPlatforms.join(', ')}]`
+      : 'all connected data platforms'
 
     const exemptions: string[] = []
     if (exemptRoles.length) exemptions.push(`have role [${exemptRoles.join(', ')}]`)
-    if (exemptPurposes.length) exemptions.push(`possess purpose [${exemptPurposes.join(', ')}]`)
     if (userAttrKey && userAttrVal) exemptions.push(`user attribute @user.${userAttrKey} ${userAttrOp} '${userAttrVal}'`)
 
     const exemptClause = exemptions.length ? ` for everyone EXCEPT users who ${exemptions.join(' OR ')}` : ''
@@ -236,9 +196,9 @@ export default function PolicyStudioPage() {
     }
     return `Grant query access across ${targetScopeStr} to users who ${exemptions.length ? exemptions.join(' OR ') : 'are authenticated'}.`
   }, [
-    archetype, scopeType, selectedTags, targetColumn, maskType,
+    archetype, targetPlatforms, targetColumn, maskType,
     filterColumn, filterOperator, filterValueType, filterValue,
-    exemptRoles, exemptPurposes, userAttrKey, userAttrOp, userAttrVal,
+    exemptRoles, userAttrKey, userAttrOp, userAttrVal,
   ])
 
   // Build draft payload for preview compilation and saving
@@ -250,9 +210,6 @@ export default function PolicyStudioPage() {
         : 'GRANT_SELECT'
 
     const conditions: any[] = []
-    exemptPurposes.forEach((p) => {
-      conditions.push({ attribute_key: 'purpose', operator: 'EQ', compare_value: p })
-    })
     if (userAttrKey && userAttrVal) {
       conditions.push({ attribute_key: userAttrKey, operator: userAttrOp, compare_value: userAttrVal })
     }
@@ -279,7 +236,7 @@ export default function PolicyStudioPage() {
 
     const resources = targetPlatforms.map((pid) => ({
       platform_id: parseInt(pid),
-      resource_scope: 'TAG',
+      resource_scope: 'PLATFORM',
     }))
 
     return {
@@ -290,7 +247,6 @@ export default function PolicyStudioPage() {
       domain_id: domainId ? parseInt(domainId) : undefined,
       product_id: productId ? parseInt(productId) : undefined,
       target_platform_ids: targetPlatforms.map(Number),
-      tags: selectedTags,
       rules: [{
         rule_name: `${archetype} Global Rule`,
         rule_type: 'COMBINED',
@@ -377,12 +333,12 @@ export default function PolicyStudioPage() {
   })
 
   const isStep1Valid = policyName.trim().length >= 3 && policyCode.trim().length >= 3
-  const isStep2Valid = scopeType === 'GLOBAL_TAG' ? selectedTags.length > 0 : targetPlatforms.length > 0
+  const isStep2Valid = targetPlatforms.length > 0
   const isStep3Valid = archetype === 'DATA_MASKING'
     ? Boolean(targetColumn.trim().length >= 2 && (maskType !== 'CUSTOM' || customMaskExpr.trim().length >= 3))
     : archetype === 'ROW_FILTER'
       ? Boolean(filterColumn.trim().length >= 2 && filterValue.trim().length >= 1)
-      : Boolean(exemptRoles.length > 0 || exemptPurposes.length > 0 || (userAttrKey.trim().length > 0 && userAttrVal.trim().length > 0))
+      : Boolean(exemptRoles.length > 0 || (userAttrKey.trim().length > 0 && userAttrVal.trim().length > 0))
 
   const handleStepClick = (target: number) => {
     if (target === 1 && !isStep1Valid) return
@@ -406,7 +362,7 @@ export default function PolicyStudioPage() {
             {isEditing ? `Edit Global Policy: ${policyName}` : 'CES Global Policy Builder'}
           </Title>
           <Text c="dimmed" size="sm">
-            Compose universal data masking, row-level access control, and subscription policies with global tag triggers across all cloud platforms.
+            Compose universal data masking, row-level access control, and subscription policies across all connected cloud platforms.
           </Text>
         </Box>
         <Group>
@@ -447,7 +403,7 @@ export default function PolicyStudioPage() {
       {/* ── Stepper Navigation ────────────────────────────────────────────────── */}
       <Stepper active={activeStep} onStepClick={handleStepClick} color="indigo" radius="md">
         <Stepper.Step label="1. Policy Archetype" description="Intent & metadata" />
-        <Stepper.Step label="2. Global Scope" description="Tags & cloud platforms" />
+        <Stepper.Step label="2. Target Scope" description="Platforms & products" />
         <Stepper.Step label="3. Rule & Exceptions" description="CES Action / Circumstance" />
         <Stepper.Step label="4. Live DDL Simulator" description="Snowflake, Redshift & OPA" />
       </Stepper>
@@ -556,104 +512,45 @@ export default function PolicyStudioPage() {
         </Stack>
       )}
 
-      {/* ── STEP 2: Global Scope & Target Triggers ──────────────────────────── */}
+      {/* ── STEP 2: Platform Scope & Triggers ──────────────────────────── */}
       {activeStep === 1 && (
         <Stack gap="lg">
           <Card withBorder p="lg" radius="md">
-            <Title order={4} mb="xs">Where does this policy apply?</Title>
+            <Title order={4} mb="xs">Target Platform & Asset Scope</Title>
             <Text size="sm" c="dimmed" mb="md">
-              CES policies can be deployed globally across all present and future assets matching tags, or scoped to specific cloud platforms.
+              Designate which connected cloud platforms, business domains, or specific data products this policy applies to.
             </Text>
 
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="lg">
-              <Paper
-                p="md"
-                radius="md"
-                withBorder
-                onClick={() => setScopeType('GLOBAL_TAG')}
-                style={{
-                  cursor: 'pointer',
-                  borderColor: scopeType === 'GLOBAL_TAG' ? 'var(--mantine-color-indigo-6)' : undefined,
-                  backgroundColor: scopeType === 'GLOBAL_TAG' ? 'var(--nav-active-bg)' : 'transparent',
-                }}
-              >
-                <Group gap="sm" mb="xs">
-                  <ThemeIcon color="indigo" variant="light" size="md"><IconTag size={18} /></ThemeIcon>
-                  <Text fw={700}>Global Tag-Based Trigger (CES Standard)</Text>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  Automatically applies across Snowflake, Redshift, Databricks, PostgreSQL to all tables and columns tagged with sensitive identifiers.
-                </Text>
-              </Paper>
-
-              <Paper
-                p="md"
-                radius="md"
-                withBorder
-                onClick={() => setScopeType('TARGETED')}
-                style={{
-                  cursor: 'pointer',
-                  borderColor: scopeType === 'TARGETED' ? 'var(--mantine-color-indigo-6)' : undefined,
-                  backgroundColor: scopeType === 'TARGETED' ? 'var(--nav-active-bg)' : 'transparent',
-                }}
-              >
-                <Group gap="sm" mb="xs">
-                  <ThemeIcon color="blue" variant="light" size="md"><IconServer size={18} /></ThemeIcon>
-                  <Text fw={700}>Targeted Platform Scope</Text>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  Restrict this policy exclusively to designated connected data platforms, domains, or specific data products.
-                </Text>
-              </Paper>
-            </SimpleGrid>
-
-            {scopeType === 'GLOBAL_TAG' ? (
-              <Stack gap="sm">
-                <MultiSelect
-                  label="Target Column / Table Metadata Tags"
-                  description="Policy will automatically bind to any data object carrying these tags"
-                  placeholder="Select Tags (e.g. PII.EMAIL, CONFIDENTIAL, FINANCE.SALARY)"
-                  data={tagOptions}
-                  value={selectedTags}
-                  onChange={setSelectedTags}
-                  searchable
+            <Stack gap="md">
+              <MultiSelect
+                label="Designated Cloud Platforms"
+                placeholder="Select Platforms (Snowflake, AWS Redshift, PostgreSQL)"
+                data={platformOptions}
+                value={targetPlatforms}
+                onChange={setTargetPlatforms}
+                searchable
+                clearable
+                required
+              />
+              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                <Select
+                  label="Data Domain (Optional)"
+                  placeholder="All Domains"
+                  data={(domains.data?.data ?? []).map((d: any) => ({ value: String(d.domain_id), label: d.domain_name }))}
+                  value={domainId}
+                  onChange={setDomainId}
                   clearable
                 />
-                <Text size="xs" c="dimmed">
-                  💡 When new tables or columns are discovered with these tags, CES automatically generates and applies the masking/row policies.
-                </Text>
-              </Stack>
-            ) : (
-              <Stack gap="md">
-                <MultiSelect
-                  label="Designated Cloud Platforms"
-                  placeholder="Select Platforms (Snowflake, AWS Redshift, PostgreSQL)"
-                  data={platformOptions}
-                  value={targetPlatforms}
-                  onChange={setTargetPlatforms}
-                  searchable
+                <Select
+                  label="Data Product (Optional)"
+                  placeholder="All Data Products"
+                  data={(products.data?.data ?? []).map((pr: any) => ({ value: String(pr.product_id), label: pr.product_name }))}
+                  value={productId}
+                  onChange={setProductId}
                   clearable
                 />
-                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                  <Select
-                    label="Data Domain (Optional)"
-                    placeholder="All Domains"
-                    data={(domains.data?.data ?? []).map((d: any) => ({ value: String(d.domain_id), label: d.domain_name }))}
-                    value={domainId}
-                    onChange={setDomainId}
-                    clearable
-                  />
-                  <Select
-                    label="Data Product (Optional)"
-                    placeholder="All Data Products"
-                    data={(products.data?.data ?? []).map((pr: any) => ({ value: String(pr.product_id), label: pr.product_name }))}
-                    value={productId}
-                    onChange={setProductId}
-                    clearable
-                  />
-                </SimpleGrid>
-              </Stack>
-            )}
+              </SimpleGrid>
+            </Stack>
           </Card>
 
           <Group justify="space-between">
@@ -741,7 +638,7 @@ export default function PolicyStudioPage() {
 
             {archetype === 'SUBSCRIPTION_ACCESS' && (
               <Alert color="teal" icon={<IconUserCheck />}>
-                Subscription Policy grants query SELECT authorization to designated roles or approved business purposes.
+                Subscription Policy grants query SELECT authorization to designated roles.
               </Alert>
             )}
           </Card>
@@ -764,17 +661,6 @@ export default function PolicyStudioPage() {
                 data={roleOptions}
                 value={exemptRoles}
                 onChange={setExemptRoles}
-                searchable
-                clearable
-              />
-
-              <MultiSelect
-                label="Exempt Business Purposes (PBAC)"
-                description="Users querying under these authorized purposes receive unmasked data"
-                placeholder="Select Purposes (e.g. FRAUD_DETECTION, REGULATORY_AUDIT)"
-                data={purposeOptions}
-                value={exemptPurposes}
-                onChange={setExemptPurposes}
                 searchable
                 clearable
               />
@@ -860,7 +746,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="snowflake">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
+                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.snowflake_sql}
                     </Code>
                   </ScrollArea.Autosize>
@@ -868,7 +754,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="redshift">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
+                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.redshift_sql}
                     </Code>
                   </ScrollArea.Autosize>
@@ -876,7 +762,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="opa">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
+                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.opa_rego}
                     </Code>
                   </ScrollArea.Autosize>
@@ -884,7 +770,7 @@ export default function PolicyStudioPage() {
 
                 <Tabs.Panel value="json">
                   <ScrollArea.Autosize mah={400}>
-                    <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
+                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {JSON.stringify(constructDraftPayload(), null, 2)}
                     </Code>
                   </ScrollArea.Autosize>

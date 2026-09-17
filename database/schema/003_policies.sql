@@ -4,32 +4,6 @@
 -- Policies, Versions, Rules, Subjects, Resources, Actions, Conditions
 -- ============================================================
 
--- ─── PBAC Business Purposes (Purpose-Based Access Control) ───────────────────
-CREATE TABLE IF NOT EXISTS purposes (
-    purpose_id             SERIAL PRIMARY KEY,
-    purpose_code           VARCHAR(100) NOT NULL UNIQUE,
-    purpose_name           VARCHAR(255) NOT NULL,
-    description            TEXT,
-    compliance_mandate     VARCHAR(100),
-    retention_period_days  INTEGER DEFAULT 365,
-    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- ─── User Purpose Authorizations ──────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS user_purposes (
-    user_purpose_id        SERIAL PRIMARY KEY,
-    user_id                INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    purpose_id             INTEGER NOT NULL REFERENCES purposes(purpose_id) ON DELETE CASCADE,
-    authorized_by          VARCHAR(255) NOT NULL DEFAULT 'SYSTEM',
-    valid_from             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    valid_until            TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
-    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(user_id, purpose_id)
-);
-
 -- ─── Entitlement & Subscription Access Requests ──────────────────────────────
 CREATE TABLE IF NOT EXISTS data_access_requests (
     request_id             SERIAL PRIMARY KEY,
@@ -37,7 +11,6 @@ CREATE TABLE IF NOT EXISTS data_access_requests (
     requestor_id           INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     domain_id              INTEGER REFERENCES data_domains(domain_id) ON DELETE SET NULL,
     product_id             INTEGER REFERENCES data_products(product_id) ON DELETE SET NULL,
-    purpose_id             INTEGER REFERENCES purposes(purpose_id) ON DELETE SET NULL,
     requested_role_id      INTEGER REFERENCES roles(role_id) ON DELETE SET NULL,
     access_level           VARCHAR(50) NOT NULL DEFAULT 'READ',
     justification          TEXT NOT NULL,
@@ -50,26 +23,6 @@ CREATE TABLE IF NOT EXISTS data_access_requests (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
--- ─── ABAC Attribute Groups (referenced before policy tables) ──────────────────
-CREATE TABLE IF NOT EXISTS abac_attribute_groups (
-    group_id            SERIAL PRIMARY KEY,
-    organization_id     INTEGER NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
-    group_name          VARCHAR(255) NOT NULL,
-    group_description   TEXT,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS abac_attribute_group_members (
-    member_id           SERIAL PRIMARY KEY,
-    group_id            INTEGER NOT NULL REFERENCES abac_attribute_groups(group_id) ON DELETE CASCADE,
-    attribute_key       VARCHAR(100) NOT NULL,
-    operator            VARCHAR(30)  NOT NULL
-                        CHECK (operator IN ('EQ','NEQ','IN','NOT_IN','GT','LT','GTE','LTE','CONTAINS','REGEX')),
-    compare_value       VARCHAR(500) NOT NULL,
-    UNIQUE(group_id, attribute_key)
-);
-
 
 -- ─── Policies ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS policies (
@@ -139,15 +92,13 @@ CREATE TABLE IF NOT EXISTS policy_rule_subjects (
     subject_id          SERIAL PRIMARY KEY,
     rule_id             INTEGER NOT NULL REFERENCES policy_rules(rule_id) ON DELETE CASCADE,
     subject_type        VARCHAR(30)  NOT NULL
-                        CHECK (subject_type IN ('ROLE','USER','ABAC_GROUP','ANY')),
+                        CHECK (subject_type IN ('ROLE','USER','ANY')),
     role_id             INTEGER REFERENCES roles(role_id),
     user_id             INTEGER REFERENCES users(user_id),
-    abac_group_id       INTEGER REFERENCES abac_attribute_groups(group_id),
     CONSTRAINT chk_subject_ref CHECK (
-        (subject_type = 'ROLE'       AND role_id       IS NOT NULL AND user_id IS NULL    AND abac_group_id IS NULL) OR
-        (subject_type = 'USER'       AND user_id        IS NOT NULL AND role_id IS NULL    AND abac_group_id IS NULL) OR
-        (subject_type = 'ABAC_GROUP' AND abac_group_id  IS NOT NULL AND role_id IS NULL    AND user_id IS NULL) OR
-        (subject_type = 'ANY'        AND role_id IS NULL            AND user_id IS NULL    AND abac_group_id IS NULL)
+        (subject_type = 'ROLE' AND role_id IS NOT NULL AND user_id IS NULL) OR
+        (subject_type = 'USER' AND user_id IS NOT NULL AND role_id IS NULL) OR
+        (subject_type = 'ANY'  AND role_id IS NULL     AND user_id IS NULL)
     )
 );
 
@@ -160,7 +111,7 @@ CREATE TABLE IF NOT EXISTS policy_rule_resources (
     schema_id           INTEGER REFERENCES metadata_schemas(schema_id),
     table_id            INTEGER REFERENCES metadata_tables(table_id),
     resource_scope      VARCHAR(30) NOT NULL
-                        CHECK (resource_scope IN ('DATABASE','SCHEMA','TABLE','COLUMN','TAG'))
+                        CHECK (resource_scope IN ('DATABASE','SCHEMA','TABLE','COLUMN'))
 );
 
 -- ─── Column-Level Resource Scoping ────────────────────────────────────────────
@@ -169,15 +120,6 @@ CREATE TABLE IF NOT EXISTS policy_rule_resource_columns (
     resource_id         INTEGER NOT NULL REFERENCES policy_rule_resources(resource_id) ON DELETE CASCADE,
     column_id           INTEGER NOT NULL REFERENCES metadata_columns(column_id),
     UNIQUE(resource_id, column_id)
-);
-
--- ─── Tag-Level Resource Scoping ───────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS policy_rule_resource_tags (
-    id                  SERIAL PRIMARY KEY,
-    resource_id         INTEGER NOT NULL REFERENCES policy_rule_resources(resource_id) ON DELETE CASCADE,
-    tag_id              INTEGER NOT NULL REFERENCES metadata_tags(tag_id),
-    tag_value           VARCHAR(255),
-    UNIQUE(resource_id, tag_id, tag_value)
 );
 
 -- ─── Rule Actions ─────────────────────────────────────────────────────────────
@@ -258,8 +200,6 @@ CREATE INDEX IF NOT EXISTS idx_pvt_version              ON policy_version_target
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp          ON audit_events(event_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_policy             ON audit_events(policy_id);
 CREATE INDEX IF NOT EXISTS idx_audit_actor              ON audit_events(actor_user_id);
-CREATE INDEX IF NOT EXISTS idx_user_purposes_user       ON user_purposes(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_purposes_purp       ON user_purposes(purpose_id);
 CREATE INDEX IF NOT EXISTS idx_dar_requestor            ON data_access_requests(requestor_id);
 CREATE INDEX IF NOT EXISTS idx_dar_status               ON data_access_requests(status);
 

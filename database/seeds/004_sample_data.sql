@@ -75,7 +75,7 @@ INSERT INTO user_role_mappings (mapping_id, user_id, role_id, granted_by_user_id
 (10, 6, 3,  7), -- frank.nguyen→ Data Engineer
 (11, 6, 10, 7), -- frank.nguyen→ ROLE_DATA_ENGINEER
 (12, 7, 8,  7)  -- admin       → Super Admin
-ON CONFLICT (mapping_id) DO NOTHING;
+ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- ─── User ABAC Attributes ─────────────────────────────────────────────────────
 INSERT INTO user_attributes (attribute_id, user_id, attribute_key, attribute_value, attribute_source) VALUES
@@ -117,36 +117,13 @@ INSERT INTO group_attributes (attribute_id, role_id, attribute_key, attribute_va
 (10, 13, 'region',           'US_WEST',          'MANUAL')
 ON CONFLICT (role_id, attribute_key) DO UPDATE SET attribute_value = EXCLUDED.attribute_value;
 
--- ─── PBAC Business Purposes (Purpose-Based Access Control) ───────────────────
-INSERT INTO purposes (purpose_id, purpose_code, purpose_name, description, compliance_mandate, retention_period_days, is_active) VALUES
-(1, 'FRAUD_DETECTION',           'Fraud & AML Detection',                 'Contextual purpose for investigating suspicious transactions, card fraud, and anti-money laundering (AML).', 'AML / BSA Regulations',    180, TRUE),
-(2, 'REGULATORY_AUDIT',         'Regulatory & Financial Audit',          'Purpose for conducting independent audits, SOX 404 control testing, and external regulatory reviews.',       'SOX 404 / SEC Mandate',     365, TRUE),
-(3, 'CUSTOMER_SERVICE_SUPPORT',  'Customer Dispute Resolution & Support', 'Limited operational purpose for resolving customer inquiries, chargebacks, and account issues.',            'GDPR Art 6(1)(b) Contract', 90,  TRUE),
-(4, 'DATA_SCIENCE_RESEARCH',     'Data Science & Predictive Modeling',    'Exploratory analytics and model training on anonymized data sets.',                                          'GDPR Art 89 Research',      730, TRUE),
-(5, 'MARKETING_CAMPAIGN',        'Targeted Marketing Campaigns',          'Commercial marketing purpose for promotional outreach, targeted communications, and campaign performance.',  'GDPR Art 6(1)(a) Consent',  60,  TRUE),
-(6, 'HIPAA_PATIENT_CARE',        'HIPAA Clinical Operations',             'Healthcare clinical operations adhering to HIPAA Minimum Necessary standards for patient treatment.',        'HIPAA Privacy Rule 45 CFR', 365, TRUE)
-ON CONFLICT (purpose_code) DO UPDATE SET
-    purpose_name = EXCLUDED.purpose_name,
-    description = EXCLUDED.description,
-    compliance_mandate = EXCLUDED.compliance_mandate,
-    retention_period_days = EXCLUDED.retention_period_days;
-
--- ─── User Purpose Authorizations ──────────────────────────────────────────────
-INSERT INTO user_purposes (user_purpose_id, user_id, purpose_id, authorized_by, valid_from, valid_until, is_active) VALUES
-(1, 1, 1, 'admin@acme.com', NOW(), NOW() + INTERVAL '180 days', TRUE), -- Alice Chen → FRAUD_DETECTION
-(2, 1, 2, 'admin@acme.com', NOW(), NOW() + INTERVAL '365 days', TRUE), -- Alice Chen → REGULATORY_AUDIT
-(3, 3, 5, 'admin@acme.com', NOW(), NOW() + INTERVAL '60 days',  TRUE), -- Carol Jones → MARKETING_CAMPAIGN
-(4, 5, 1, 'alice.chen',     NOW(), NOW() + INTERVAL '180 days', TRUE), -- Eve Taylor  → FRAUD_DETECTION
-(5, 6, 4, 'admin@acme.com', NOW(), NOW() + INTERVAL '730 days', TRUE)  -- Frank Nguyen → DATA_SCIENCE_RESEARCH
-ON CONFLICT (user_id, purpose_id) DO NOTHING;
-
 -- ─── Entitlement & Subscription Requests ──────────────────────────────────────
-INSERT INTO data_access_requests (request_id, request_number, requestor_id, domain_id, product_id, purpose_id, requested_role_id, access_level, justification, valid_for_days, status, reviewed_by_id, reviewed_at, review_comment) VALUES
-(1, 'REQ-2026-0001', 5, 1, 2, 1, 9,  'READ', 'Urgent investigation of suspicious wire transfer activity in EMEA accounts for AML filing.', 30, 'APPROVED', 1, NOW() - INTERVAL '2 days', 'Approved for AML fraud investigation.'),
-(2, 'REQ-2026-0002', 3, 3, 5, 5, 13, 'READ', 'Access customer profiles to build segment targeting for Q3 product launch.',                  60, 'PENDING',  NULL, NULL, NULL),
-(3, 'REQ-2026-0003', 6, 1, 1, 4, 10, 'READ', 'Analyze monthly revenue aggregation latency for pipeline optimization.',                        90, 'PENDING',  NULL, NULL, NULL),
-(4, 'REQ-2026-0004', 4, 4, 7, 2, 2,  'READ', 'Evaluate regional warehouse shipment bottlenecks against inventory data.',                     45, 'PENDING',  NULL, NULL, NULL),
-(5, 'REQ-2026-0005', 2, 2, 4, 2, 7,  'READ', 'Conduct external HR compliance compensation audit report.',                                    30, 'REJECTED', 7, NOW() - INTERVAL '5 days', 'Requires Department Head counter-signature.')
+INSERT INTO data_access_requests (request_id, request_number, requestor_id, domain_id, product_id, requested_role_id, access_level, justification, valid_for_days, status, reviewed_by_id, reviewed_at, review_comment) VALUES
+(1, 'REQ-2026-0001', 5, 1, 2, 9,  'READ', 'Urgent investigation of suspicious wire transfer activity in EMEA accounts for AML filing.', 30, 'APPROVED', 1, NOW() - INTERVAL '2 days', 'Approved for AML fraud investigation.'),
+(2, 'REQ-2026-0002', 3, 3, 5, 13, 'READ', 'Access customer profiles to build segment targeting for Q3 product launch.',                  60, 'PENDING',  NULL, NULL, NULL),
+(3, 'REQ-2026-0003', 6, 1, 1, 10, 'READ', 'Analyze monthly revenue aggregation latency for pipeline optimization.',                        90, 'PENDING',  NULL, NULL, NULL),
+(4, 'REQ-2026-0004', 4, 4, 7, 2,  'READ', 'Evaluate regional warehouse shipment bottlenecks against inventory data.',                     45, 'PENDING',  NULL, NULL, NULL),
+(5, 'REQ-2026-0005', 2, 2, 4, 7,  'READ', 'Conduct external HR compliance compensation audit report.',                                    30, 'REJECTED', 7, NOW() - INTERVAL '5 days', 'Requires Department Head counter-signature.')
 ON CONFLICT (request_id) DO NOTHING;
 
 -- ─── Platforms ────────────────────────────────────────────────────────────────
@@ -284,71 +261,6 @@ INSERT INTO metadata_columns (table_id, column_name, ordinal_position, data_type
 (10, 'region_code',      6, 'varchar(50)',  'TEXT',      FALSE, FALSE)
 ON CONFLICT (table_id, column_name) DO NOTHING;
 
--- ─── Tags (Hierarchical Taxonomy Tree) ─────────────────────────────────────────
--- 1. Root Categories
-INSERT INTO metadata_tags (tag_id, platform_id, tag_name, full_path, parent_tag_id, tag_category, source_type, description) VALUES
-(1, NULL, 'Discovered',     'Discovered',               NULL, 'SYSTEM',         'SYSTEM', 'Root category for automated sensitive data discovery identifiers'),
-(2, NULL, 'Governance',     'Governance',               NULL, 'GOVERNANCE',     'MANUAL', 'Enterprise data governance, privacy, and confidentiality levels'),
-(3, NULL, 'Compliance',     'Compliance',               NULL, 'COMPLIANCE',     'MANUAL', 'Regulatory compliance mandates (HIPAA, GDPR, PCI-DSS, SOX)')
-ON CONFLICT (full_path) DO NOTHING;
-
--- 2. Level 2 Branches
-INSERT INTO metadata_tags (tag_id, platform_id, tag_name, full_path, parent_tag_id, tag_category, source_type, description) VALUES
-(4, NULL, 'PII',             'Discovered.PII',           1, 'PII',             'DISCOVERED', 'Personally Identifiable Information branch'),
-(5, NULL, 'Financial',       'Discovered.Financial',     1, 'FINANCIAL',       'DISCOVERED', 'Financial account and compensation data identifiers'),
-(6, NULL, 'Location',        'Discovered.Location',      1, 'LOCATION',        'DISCOVERED', 'Geographic and address identifiers'),
-(7, NULL, 'Confidentiality', 'Governance.Confidentiality', 2, 'CONFIDENTIALITY', 'MANUAL',     'Data classification tiers'),
-(8, NULL, 'GDPR',            'Compliance.GDPR',          3, 'COMPLIANCE',      'MANUAL',     'European General Data Protection Regulation personal data'),
-(9, NULL, 'HIPAA',           'Compliance.HIPAA',         3, 'COMPLIANCE',      'MANUAL',     'Health Insurance Portability and Accountability Act data'),
-(10,NULL, 'PCI-DSS',         'Compliance.PCI-DSS',       3, 'COMPLIANCE',      'MANUAL',     'Payment Card Industry Data Security Standard data'),
-(11,NULL, 'SOX',             'Compliance.SOX',           3, 'COMPLIANCE',      'MANUAL',     'Sarbanes-Oxley Act financial governance data')
-ON CONFLICT (full_path) DO NOTHING;
-
--- 3. Level 3 Leaf Tags
-INSERT INTO metadata_tags (tag_id, platform_id, tag_name, full_path, parent_tag_id, tag_category, source_type, description) VALUES
-(12, NULL, 'Email',          'Discovered.PII.Email',                 4, 'PII',             'DISCOVERED', 'Email address columns'),
-(13, NULL, 'Phone',          'Discovered.PII.Phone',                 4, 'PII',             'DISCOVERED', 'Telephone or mobile contact numbers'),
-(14, NULL, 'SSN',            'Discovered.PII.SSN',                   4, 'PII',             'DISCOVERED', 'Social Security or National Identification numbers'),
-(15, NULL, 'Name',           'Discovered.PII.Name',                  4, 'PII',             'DISCOVERED', 'Customer, employee, or individual personal names'),
-(16, NULL, 'DateOfBirth',    'Discovered.PII.DateOfBirth',           4, 'PII',             'DISCOVERED', 'Individual birth dates'),
-(17, NULL, 'BankAccount',    'Discovered.Financial.BankAccount',     5, 'FINANCIAL',       'DISCOVERED', 'Bank account, IBAN, or routing numbers'),
-(18, NULL, 'RoutingNumber',  'Discovered.Financial.RoutingNumber',   5, 'FINANCIAL',       'DISCOVERED', 'Bank routing transit numbers'),
-(19, NULL, 'Salary',         'Discovered.Financial.Salary',          5, 'FINANCIAL',       'DISCOVERED', 'Employee salary, wage, or compensation figures'),
-(20, NULL, 'Income',         'Discovered.Financial.Income',          5, 'FINANCIAL',       'DISCOVERED', 'Annual income or gross earnings amounts'),
-(21, NULL, 'CreditCard',     'Discovered.Financial.CreditCard',      5, 'FINANCIAL',       'DISCOVERED', 'Credit or debit card payment PANs'),
-(22, NULL, 'CreditScore',    'Discovered.Financial.CreditScore',     5, 'FINANCIAL',       'DISCOVERED', 'Customer credit ratings or risk scores'),
-(23, NULL, 'Address',        'Discovered.Location.Address',          6, 'LOCATION',        'DISCOVERED', 'Street, postal address, or residence'),
-(24, NULL, 'City',           'Discovered.Location.City',             6, 'LOCATION',        'DISCOVERED', 'Municipality, city, or town name'),
-(25, NULL, 'Public',         'Governance.Confidentiality.Public',    7, 'CONFIDENTIALITY', 'MANUAL',     'Publicly accessible unclassified data'),
-(26, NULL, 'Internal',       'Governance.Confidentiality.Internal',  7, 'CONFIDENTIALITY', 'MANUAL',     'General internal business data'),
-(27, NULL, 'Confidential',   'Governance.Confidentiality.Confidential', 7, 'CONFIDENTIALITY', 'MANUAL', 'Confidential enterprise business data'),
-(28, NULL, 'Restricted',     'Governance.Confidentiality.Restricted',   7, 'CONFIDENTIALITY', 'MANUAL', 'Highest protection tier: restricted access only')
-ON CONFLICT (full_path) DO NOTHING;
-
--- ─── Tag Assignments ──────────────────────────────────────────────────────────
-INSERT INTO metadata_tag_assignments (assignment_id, tag_id, column_id, tag_value, confidence_score, assigned_by) VALUES
-(1,  15, 2,  'FIRST_NAME',        0.98, 'AUTOMATED_DISCOVERY'),
-(2,  15, 3,  'LAST_NAME',         0.98, 'AUTOMATED_DISCOVERY'),
-(3,  12, 4,  'EMAIL',             0.99, 'AUTOMATED_DISCOVERY'),
-(4,  13, 5,  'PHONE',             0.95, 'AUTOMATED_DISCOVERY'),
-(5,  16, 6,  'DATE_OF_BIRTH',     0.97, 'AUTOMATED_DISCOVERY'),
-(6,  20, 7,  'ANNUAL_INCOME_USD', 0.92, 'AUTOMATED_DISCOVERY'),
-(7,  14, 8,  'SSN_MASKED',        0.99, 'AUTOMATED_DISCOVERY'),
-(8,  19, 21, 'BASE_SALARY_USD',   0.96, 'AUTOMATED_DISCOVERY'),
-(9,  17, 23, 'BANK_ACCOUNT_NUM',  0.99, 'AUTOMATED_DISCOVERY'),
-(10, 18, 24, 'ROUTING_NUMBER',    0.98, 'AUTOMATED_DISCOVERY'),
-(11, 12, 42, 'email',             0.99, 'AUTOMATED_DISCOVERY'),
-(12, 14, 43, 'national_id',       0.99, 'AUTOMATED_DISCOVERY'),
-(13, 19, 44, 'salary_amount',     0.97, 'AUTOMATED_DISCOVERY'),
-(14, 15, 46, 'full_name',         0.98, 'AUTOMATED_DISCOVERY'),
-(15, 12, 47, 'email_address',     0.99, 'AUTOMATED_DISCOVERY'),
-(16, 13, 48, 'phone_number',      0.95, 'AUTOMATED_DISCOVERY'),
-(17, 22, 49, 'credit_score',      0.93, 'AUTOMATED_DISCOVERY'),
-(18, 24, 50, 'city',              0.91, 'AUTOMATED_DISCOVERY'),
-(19, 19, 54, 'gross_pay_usd',     0.96, 'AUTOMATED_DISCOVERY'),
-(20, 19, 55, 'net_pay_usd',       0.96, 'AUTOMATED_DISCOVERY')
-ON CONFLICT (assignment_id) DO NOTHING;
-
 -- ─── Data Product → Table Mappings ───────────────────────────────────────────
 INSERT INTO data_product_table_mappings (mapping_id, product_id, table_id, is_primary_table) VALUES
 (1, 5, 1,  TRUE),   -- Customer 360 → CUSTOMER_PROFILES (Snowflake)
@@ -412,22 +324,13 @@ INSERT INTO policy_rule_actions (action_id, rule_id, action_type, mask_type, fil
 (5, 5, 'GRANT_SELECT',NULL,          NULL,     NULL)
 ON CONFLICT (action_id) DO NOTHING;
 
-INSERT INTO policy_rule_conditions (condition_id, rule_id, condition_group, attribute_type, attribute_key, operator, compare_value_type, compare_value) VALUES
-(1, 1, 1, 'SESSION_ATTRIBUTE', 'purpose', 'EQ', 'LITERAL', 'FRAUD_DETECTION'),
-(2, 4, 1, 'SESSION_ATTRIBUTE', 'purpose', 'EQ', 'LITERAL', 'REGULATORY_AUDIT')
-ON CONFLICT (condition_id) DO NOTHING;
-
 INSERT INTO policy_rule_resources (resource_id, rule_id, platform_id, database_id, schema_id, table_id, resource_scope) VALUES
-(1, 1, 1, 1, 1, 1,  'TAG'),    -- Global Tag-scoped: Discovered.PII.Email
+(1, 1, 1, 1, 1, 1,  'TABLE'),  -- Snowflake CUSTOMER_PROFILES
 (2, 2, 1, 1, 1, 1,  'TABLE'),  -- Snowflake CUSTOMER_PROFILES
 (3, 3, 2, 3, 4, 10, 'TABLE'),  -- Redshift revenue_summary
 (4, 4, 1, 1, 1, 5,  'TABLE'),  -- Snowflake GL_TRANSACTIONS
 (5, 5, 2, 3, 4, 10, 'TABLE')   -- Redshift revenue_summary
 ON CONFLICT (resource_id) DO NOTHING;
-
-INSERT INTO policy_rule_resource_tags (id, resource_id, tag_id, tag_value) VALUES
-(1, 1, 12, 'TRUE')  -- Links resource_id 1 to Discovered.PII.Email (tag_id 12)
-ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO policy_version_targets (version_id, platform_id, deployment_status, celery_task_id, error_message, deployed_at) VALUES
 (1, 1, 'SUCCESS', 'celery-dep-sf-001', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
@@ -489,21 +392,6 @@ INSERT INTO platform_user_mappings (user_id, platform_id, platform_code, externa
 ON CONFLICT (user_id, platform_code) DO UPDATE SET
     external_user_id = EXCLUDED.external_user_id;
 
--- ─── Automated Tag Discovery Identifiers Seed ─────────────────────────────────
-INSERT INTO metadata_tag_rules (tag_path, category, regex_pattern, description) VALUES
-('Discovered.PII.Email',            'PII',       '.*(email|mail_addr|e_mail).*',                                                                'Email address classifier'),
-('Discovered.PII.Phone',            'PII',       '.*(phone|mobile|cell|contact_num|tel_num).*',                                                 'Telephone & mobile number classifier'),
-('Discovered.PII.SSN',              'PII',       '.*(ssn|social_sec|national_id|tax_id).*',                                                     'Social Security & National ID classifier'),
-('Discovered.PII.Name',             'PII',       '.*(first_name|last_name|full_name|customer_name|patient_name|user_name|contact_name).*',      'Person full/first/last name classifier'),
-('Discovered.Financial.CreditCard', 'FINANCIAL', '.*(card_num|credit_card|cc_num|pan|card_number).*',                                          'Payment card / credit card classifier'),
-('Discovered.Financial.Salary',     'FINANCIAL', '.*(salary|wage|compensation|bonus|annual_income|pay_rate).*',                                 'Employee compensation / wage classifier'),
-('Discovered.Financial.BankAccount','FINANCIAL', '.*(account_num|bank_acc|iban|routing_num|swift_code).*',                                     'Bank account and routing number classifier'),
-('Discovered.Location.Address',     'LOCATION',  '.*(address|street_addr|postal_code|zip_code|residence).*',                                    'Postal & physical street address classifier')
-ON CONFLICT (tag_path) DO UPDATE SET
-    category = EXCLUDED.category,
-    regex_pattern = EXCLUDED.regex_pattern,
-    description = EXCLUDED.description;
-
 -- ─── Advance Auto-Increment Sequences to Prevent Unique Constraint Collisions ──
 SELECT setval('organizations_organization_id_seq',           COALESCE((SELECT MAX(organization_id) FROM organizations), 1));
 SELECT setval('data_domains_domain_id_seq',                   COALESCE((SELECT MAX(domain_id) FROM data_domains), 1));
@@ -513,16 +401,12 @@ SELECT setval('users_user_id_seq',                             COALESCE((SELECT 
 SELECT setval('user_role_mappings_mapping_id_seq',             COALESCE((SELECT MAX(mapping_id) FROM user_role_mappings), 1));
 SELECT setval('user_attributes_attribute_id_seq',              COALESCE((SELECT MAX(attribute_id) FROM user_attributes), 1));
 SELECT setval('group_attributes_attribute_id_seq',             COALESCE((SELECT MAX(attribute_id) FROM group_attributes), 1));
-SELECT setval('purposes_purpose_id_seq',                       COALESCE((SELECT MAX(purpose_id) FROM purposes), 1));
-SELECT setval('user_purposes_user_purpose_id_seq',             COALESCE((SELECT MAX(user_purpose_id) FROM user_purposes), 1));
 SELECT setval('data_access_requests_request_id_seq',           COALESCE((SELECT MAX(request_id) FROM data_access_requests), 1));
 SELECT setval('metadata_platforms_platform_id_seq',            COALESCE((SELECT MAX(platform_id) FROM metadata_platforms), 1));
 SELECT setval('metadata_databases_database_id_seq',            COALESCE((SELECT MAX(database_id) FROM metadata_databases), 1));
 SELECT setval('metadata_schemas_schema_id_seq',                COALESCE((SELECT MAX(schema_id) FROM metadata_schemas), 1));
 SELECT setval('metadata_tables_table_id_seq',                  COALESCE((SELECT MAX(table_id) FROM metadata_tables), 1));
 SELECT setval('metadata_columns_column_id_seq',                COALESCE((SELECT MAX(column_id) FROM metadata_columns), 1));
-SELECT setval('metadata_tags_tag_id_seq',                      COALESCE((SELECT MAX(tag_id) FROM metadata_tags), 1));
-SELECT setval('metadata_tag_assignments_assignment_id_seq',    COALESCE((SELECT MAX(assignment_id) FROM metadata_tag_assignments), 1));
 SELECT setval('data_product_table_mappings_mapping_id_seq',    COALESCE((SELECT MAX(mapping_id) FROM data_product_table_mappings), 1));
 SELECT setval('platform_role_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM platform_role_mappings), 1));
 SELECT setval('platform_user_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM platform_user_mappings), 1));
@@ -533,6 +417,5 @@ SELECT setval('policy_rule_subjects_subject_id_seq',           COALESCE((SELECT 
 SELECT setval('policy_rule_actions_action_id_seq',             COALESCE((SELECT MAX(action_id) FROM policy_rule_actions), 1));
 SELECT setval('policy_rule_conditions_condition_id_seq',       COALESCE((SELECT MAX(condition_id) FROM policy_rule_conditions), 1));
 SELECT setval('policy_rule_resources_resource_id_seq',         COALESCE((SELECT MAX(resource_id) FROM policy_rule_resources), 1));
-SELECT setval('policy_rule_resource_tags_id_seq',              COALESCE((SELECT MAX(id) FROM policy_rule_resource_tags), 1));
 SELECT setval('celery_task_history_id_seq',                    COALESCE((SELECT MAX(id) FROM celery_task_history), 1));
 

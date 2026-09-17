@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from db.session import get_db
-from services.tag_scanner import run_sensitive_data_discovery
 from tasks.metadata_tasks import _async_sync_metadata, sync_platform_metadata_cron
 
 router = APIRouter()
@@ -717,253 +716,6 @@ async def search_metadata(
 
     return results
 
-
-class TagCreateRequest(BaseModel):
-    tag_name: str
-    parent_tag_id: Optional[int] = None
-    tag_category: Optional[str] = "GOVERNANCE"
-    description: Optional[str] = None
-    allowed_values: Optional[str] = None
-    platform_id: Optional[int] = None
-
-
-class TagAssignRequest(BaseModel):
-    tag_id: int
-    table_id: Optional[int] = None
-    column_id: Optional[int] = None
-    tag_value: Optional[str] = "CONFIRMED"
-
-
-@router.get("/tags")
-async def list_tags(platform_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
-    query = """
-        SELECT
-            t.*,
-            (SELECT COUNT(*) FROM metadata_tag_assignments a WHERE a.tag_id = t.tag_id) AS asset_count
-        FROM metadata_tags t
-    """
-    params = {}
-    if platform_id:
-        query += " WHERE t.platform_id = :p"
-        params["p"] = platform_id
-    query += " ORDER BY t.full_path, t.tag_name"
-    rows = (await db.execute(text(query), params)).mappings().all()
-    return [dict(r) for r in rows]
-
-
-@router.get("/tags/tree")
-async def get_tags_tree(db: AsyncSession = Depends(get_db)):
-    """Return CES hierarchical tree of tags."""
-    query = text("""
-        SELECT
-            t.tag_id,
-            t.tag_name,
-            t.parent_tag_id,
-            t.tag_category,
-            t.full_path,
-            t.source_type,
-            t.description,
-            t.allowed_values,
-            (SELECT COUNT(*) FROM metadata_tag_assignments a WHERE a.tag_id = t.tag_id) AS asset_count
-        FROM metadata_tags t
-        ORDER BY t.full_path, t.tag_name
-    """)
-    rows = (await db.execute(query)).mappings().all()
-    tag_list = [dict(r) for r in rows]
-
-    tag_map = {t["tag_id"]: {**t, "children": []} for t in tag_list}
-    tree = []
-
-    for t in tag_list:
-        p_id = t["parent_tag_id"]
-        if p_id and p_id in tag_map:
-            tag_map[p_id]["children"].append(tag_map[t["tag_id"]])
-        else:
-            tree.append(tag_map[t["tag_id"]])
-
-    return tree
-
-
-@router.post("/tags", status_code=status.HTTP_201_CREATED)
-async def create_tag(req: TagCreateRequest, db: AsyncSession = Depends(get_db)):
-    """Create a new custom CES hierarchical tag."""
-    parent_path = None
-    if req.parent_tag_id:
-        p_row = (
-            await db.execute(
-                text("SELECT full_path FROM metadata_tags WHERE tag_id = :pid"),
-                {"pid": req.parent_tag_id},
-            )
-        ).first()
-        if p_row:
-            parent_path = p_row.full_path
-
-    full_path = f"{parent_path}.{req.tag_name}" if parent_path else req.tag_name
-
-    query = text("""
-        INSERT INTO metadata_tags (tag_name, parent_tag_id, tag_category, full_path, source_type, description, allowed_values, platform_id)
-        VALUES (:name, :parent_id, :cat, :path, 'MANUAL', :desc, :allowed, :platform_id)
-        RETURNING *
-    """)
-    res = (
-        (
-            await db.execute(
-                query,
-                {
-                    "name": req.tag_name,
-                    "parent_id": req.parent_tag_id,
-                    "cat": req.tag_category,
-                    "path": full_path,
-                    "desc": req.description,
-                    "allowed": req.allowed_values,
-                    "platform_id": req.platform_id,
-                },
-            )
-        )
-        .mappings()
-        .first()
-    )
-    await db.commit()
-    return dict(res)
-
-
-@router.delete("/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_tag(tag_id: int, db: AsyncSession = Depends(get_db)):
-    await db.execute(text("DELETE FROM metadata_tags WHERE tag_id = :id"), {"id": tag_id})
-    await db.commit()
-
-
-@router.post("/tags/discover")
-async def trigger_sensitive_data_discovery(db: AsyncSession = Depends(get_db)):
-    """Trigger the CES Sensitive Data Discovery scanner across data catalog assets."""
-    return await run_sensitive_data_discovery(db)
-
-
-@router.post("/tags/sync-platform")
-async def sync_platform_tags(db: AsyncSession = Depends(get_db)):
-    """Sync external platform tags from connected Snowflake / Redshift instances."""
-    platforms = (
-        (
-            await db.execute(
-                text(
-                    "SELECT platform_id, platform_code, platform_name FROM metadata_platforms WHERE is_active = TRUE"
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-    synced = []
-    for p in platforms:
-        p_code = p["platform_code"]
-        native_tag_name = f"External.{p_code}.Confidential"
-        await db.execute(
-            text("""
-                INSERT INTO metadata_tags (tag_name, tag_category, full_path, source_type, description, platform_id)
-                VALUES (:name, 'EXTERNAL_CATALOG', :path, 'EXTERNAL_SYNC', :desc, :pid)
-                ON CONFLICT (full_path) DO NOTHING
-            """),
-            {
-                "name": f"{p_code}_TAG",
-                "path": native_tag_name,
-                "desc": f"Ingested native tag from connected platform {p['platform_name']}",
-                "pid": p["platform_id"],
-            },
-        )
-        synced.append(native_tag_name)
-    await db.commit()
-    return {"status": "SUCCESS", "synced_platforms": len(platforms), "tags": synced}
-
-
-@router.post("/tags/assign")
-async def assign_tag(req: TagAssignRequest, db: AsyncSession = Depends(get_db)):
-    """Manually assign a tag to a table or column."""
-    if not req.table_id and not req.column_id:
-        raise HTTPException(
-            status_code=400, detail="Either table_id or column_id must be specified"
-        )
-
-    query = text("""
-        INSERT INTO metadata_tag_assignments (tag_id, table_id, column_id, tag_value, assigned_at_source)
-        VALUES (:tag_id, :table_id, :column_id, :tag_val, NOW())
-        RETURNING assignment_id
-    """)
-    res = (
-        await db.execute(
-            query,
-            {
-                "tag_id": req.tag_id,
-                "table_id": req.table_id,
-                "column_id": req.column_id,
-                "tag_val": req.tag_value,
-            },
-        )
-    ).first()
-    await db.commit()
-    return {"status": "ASSIGNED", "assignment_id": res.assignment_id}
-
-
-@router.delete("/tags/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def unassign_tag(assignment_id: int, db: AsyncSession = Depends(get_db)):
-    await db.execute(
-        text("DELETE FROM metadata_tag_assignments WHERE assignment_id = :aid"),
-        {"aid": assignment_id},
-    )
-    await db.commit()
-
-
-@router.get("/tags/{tag_id}/assets")
-async def get_tag_assets(tag_id: int, db: AsyncSession = Depends(get_db)):
-    """List all columns and tables carrying the specified tag."""
-    col_query = text("""
-        SELECT
-            a.assignment_id,
-            a.tag_value,
-            a.last_synced_at,
-            c.column_id,
-            c.column_name,
-            c.data_type,
-            t.table_id,
-            t.table_name,
-            s.schema_name,
-            d.database_name,
-            p.platform_name
-        FROM metadata_tag_assignments a
-        JOIN metadata_columns c ON c.column_id = a.column_id
-        JOIN metadata_tables t ON t.table_id = c.table_id
-        JOIN metadata_schemas s ON s.schema_id = t.schema_id
-        JOIN metadata_databases d ON d.database_id = s.database_id
-        JOIN metadata_platforms p ON p.platform_id = d.platform_id
-        WHERE a.tag_id = :tag_id
-    """)
-    cols = (await db.execute(col_query, {"tag_id": tag_id})).mappings().all()
-
-    tbl_query = text("""
-        SELECT
-            a.assignment_id,
-            a.tag_value,
-            a.last_synced_at,
-            t.table_id,
-            t.table_name,
-            s.schema_name,
-            d.database_name,
-            p.platform_name
-        FROM metadata_tag_assignments a
-        JOIN metadata_tables t ON t.table_id = a.table_id
-        JOIN metadata_schemas s ON s.schema_id = t.schema_id
-        JOIN metadata_databases d ON d.database_id = s.database_id
-        JOIN metadata_platforms p ON p.platform_id = d.platform_id
-        WHERE a.tag_id = :tag_id
-    """)
-    tbls = (await db.execute(tbl_query, {"tag_id": tag_id})).mappings().all()
-
-    return {
-        "tag_id": tag_id,
-        "tagged_columns": [dict(r) for r in cols],
-        "tagged_tables": [dict(r) for r in tbls],
-    }
-
-
 @router.get("/domains")
 async def list_domains(db: AsyncSession = Depends(get_db)):
     rows = (
@@ -980,47 +732,229 @@ async def list_domains(db: AsyncSession = Depends(get_db)):
     return [dict(r) for r in rows]
 
 
+class DomainCreate(BaseModel):
+    domain_name: str
+    domain_code: str
+    description: Optional[str] = None
+    domain_owner_ldap: Optional[str] = None
+    organization_id: Optional[int] = 1
+
+
+class DomainUpdate(BaseModel):
+    domain_name: Optional[str] = None
+    description: Optional[str] = None
+    domain_owner_ldap: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@router.post("/domains")
+async def create_domain(body: DomainCreate, db: AsyncSession = Depends(get_db)):
+    row = (await db.execute(text("""
+        INSERT INTO data_domains (organization_id, domain_name, domain_code, description, domain_owner_ldap)
+        VALUES (:org_id, :name, :code, :desc, :owner)
+        RETURNING domain_id, domain_name, domain_code, description, domain_owner_ldap, is_active, created_at
+    """), {
+        "org_id": body.organization_id or 1,
+        "name": body.domain_name,
+        "code": body.domain_code.upper(),
+        "desc": body.description,
+        "owner": body.domain_owner_ldap,
+    })).mappings().first()
+    await db.commit()
+    return dict(row)
+
+
+@router.put("/domains/{domain_id}")
+async def update_domain(domain_id: int, body: DomainUpdate, db: AsyncSession = Depends(get_db)):
+    sets, params = [], {"did": domain_id}
+    if body.domain_name is not None:
+        sets.append("domain_name = :name"); params["name"] = body.domain_name
+    if body.description is not None:
+        sets.append("description = :desc"); params["desc"] = body.description
+    if body.domain_owner_ldap is not None:
+        sets.append("domain_owner_ldap = :owner"); params["owner"] = body.domain_owner_ldap
+    if body.is_active is not None:
+        sets.append("is_active = :active"); params["active"] = body.is_active
+    if not sets:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    sets.append("updated_at = now()")
+    row = (await db.execute(text(f"UPDATE data_domains SET {', '.join(sets)} WHERE domain_id = :did RETURNING *"), params)).mappings().first()
+    await db.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Domain not found")
+    return dict(row)
+
+
+@router.delete("/domains/{domain_id}")
+async def delete_domain(domain_id: int, db: AsyncSession = Depends(get_db)):
+    # Block archive if domain has active products
+    child_count = (await db.execute(
+        text("SELECT COUNT(*) FROM data_products WHERE domain_id = :did AND is_active = TRUE"),
+        {"did": domain_id}
+    )).scalar()
+    if child_count and child_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot archive this domain: it still has {child_count} active data product(s). Archive or move all products first."
+        )
+    await db.execute(text("UPDATE data_domains SET is_active = FALSE WHERE domain_id = :did"), {"did": domain_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── Data Products ──────────────────────────────────────────────────────────────
+
 @router.get("/products")
 async def list_products(domain_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
-    query = "SELECT dp.*, dd.domain_name FROM data_products dp JOIN data_domains dd ON dd.domain_id = dp.domain_id WHERE dp.is_active = TRUE"
+    query = """
+        SELECT dp.*, dd.domain_name,
+               COALESCE(
+                 (SELECT json_agg(json_build_object(
+                    'platform_id', mp.platform_id,
+                    'platform_name', mp.platform_name,
+                    'platform_code', mp.platform_code,
+                    'driver_code', mp.driver_code
+                 ))
+                  FROM product_platform_mappings ppm
+                  JOIN metadata_platforms mp ON mp.platform_id = ppm.platform_id
+                  WHERE ppm.product_id = dp.product_id
+                 ), '[]'::json
+               ) AS linked_platforms
+        FROM data_products dp
+        JOIN data_domains dd ON dd.domain_id = dp.domain_id
+        WHERE dp.is_active = TRUE
+    """
     params = {}
     if domain_id:
         query += " AND dp.domain_id = :d"
         params["d"] = domain_id
+    query += " ORDER BY dd.domain_name, dp.product_name"
     rows = (await db.execute(text(query), params)).mappings().all()
     return [dict(r) for r in rows]
 
 
-@router.get("/attributes")
-async def list_attributes(db: AsyncSession = Depends(get_db)):
-    """Return distinct column names, user attributes, and tags for autocomplete."""
-    cols = (
-        (await db.execute(text("SELECT DISTINCT LOWER(column_name) FROM metadata_columns")))
-        .scalars()
-        .all()
-    )
-    u_attrs = (
-        (await db.execute(text("SELECT DISTINCT LOWER(attribute_key) FROM user_attributes")))
-        .scalars()
-        .all()
-    )
-    tags = (
-        (await db.execute(text("SELECT DISTINCT LOWER(tag_name) FROM metadata_tags")))
-        .scalars()
-        .all()
-    )
+class ProductCreate(BaseModel):
+    domain_id: int
+    product_name: str
+    product_code: str
+    description: Optional[str] = None
+    product_owner_ldap: Optional[str] = None
+    sensitivity_level: Optional[str] = "INTERNAL"
 
-    defaults = [
-        "department",
-        "clearance_level",
-        "cost_center",
-        "office_location",
-        "job_title",
-        "region",
-        "region_code",
-    ]
-    combined = sorted(list(set(cols + u_attrs + tags + defaults)))
-    return combined
+
+class ProductUpdate(BaseModel):
+    product_name: Optional[str] = None
+    description: Optional[str] = None
+    product_owner_ldap: Optional[str] = None
+    sensitivity_level: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@router.post("/products")
+async def create_product(body: ProductCreate, db: AsyncSession = Depends(get_db)):
+    row = (await db.execute(text("""
+        INSERT INTO data_products (domain_id, product_name, product_code, description, product_owner_ldap, sensitivity_level)
+        VALUES (:did, :name, :code, :desc, :owner, :sens)
+        RETURNING product_id, domain_id, product_name, product_code, description, sensitivity_level, is_active, created_at
+    """), {
+        "did": body.domain_id,
+        "name": body.product_name,
+        "code": body.product_code.upper(),
+        "desc": body.description,
+        "owner": body.product_owner_ldap,
+        "sens": body.sensitivity_level or "INTERNAL",
+    })).mappings().first()
+    await db.commit()
+    return dict(row)
+
+
+@router.put("/products/{product_id}")
+async def update_product(product_id: int, body: ProductUpdate, db: AsyncSession = Depends(get_db)):
+    sets, params = [], {"pid": product_id}
+    if body.product_name is not None:
+        sets.append("product_name = :name"); params["name"] = body.product_name
+    if body.description is not None:
+        sets.append("description = :desc"); params["desc"] = body.description
+    if body.product_owner_ldap is not None:
+        sets.append("product_owner_ldap = :owner"); params["owner"] = body.product_owner_ldap
+    if body.sensitivity_level is not None:
+        sets.append("sensitivity_level = :sens"); params["sens"] = body.sensitivity_level
+    if body.is_active is not None:
+        sets.append("is_active = :active"); params["active"] = body.is_active
+    if not sets:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    sets.append("updated_at = now()")
+    row = (await db.execute(text(f"UPDATE data_products SET {', '.join(sets)} WHERE product_id = :pid RETURNING *"), params)).mappings().first()
+    await db.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return dict(row)
+
+
+@router.delete("/products/{product_id}")
+async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    # Block archive if product has linked platforms (table may not exist yet, handle gracefully)
+    try:
+        link_count = (await db.execute(
+            text("SELECT COUNT(*) FROM product_platform_mappings WHERE product_id = :pid"),
+            {"pid": product_id}
+        )).scalar()
+        if link_count and link_count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot archive this product: it is linked to {link_count} data platform(s). Unlink all platforms first."
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # table doesn't exist yet, skip check
+    await db.execute(text("UPDATE data_products SET is_active = FALSE WHERE product_id = :pid"), {"pid": product_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── Product ↔ Platform Links ───────────────────────────────────────────────────
+
+@router.get("/products/{product_id}/platforms")
+async def list_product_platforms(product_id: int, db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(text("""
+        SELECT mp.platform_id, mp.platform_name, mp.platform_code, mp.driver_code, mp.connection_status, mp.is_active
+        FROM product_platform_mappings ppm
+        JOIN metadata_platforms mp ON mp.platform_id = ppm.platform_id
+        WHERE ppm.product_id = :pid
+        ORDER BY mp.platform_name
+    """), {"pid": product_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.post("/products/{product_id}/platforms/{platform_id}")
+async def link_product_platform(product_id: int, platform_id: int, db: AsyncSession = Depends(get_db)):
+    # Ensure junction table exists
+    await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS product_platform_mappings (
+            mapping_id SERIAL PRIMARY KEY,
+            product_id INTEGER NOT NULL REFERENCES data_products(product_id) ON DELETE CASCADE,
+            platform_id INTEGER NOT NULL REFERENCES metadata_platforms(platform_id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(product_id, platform_id)
+        )
+    """))
+    await db.execute(text("""
+        INSERT INTO product_platform_mappings (product_id, platform_id)
+        VALUES (:pid, :plid)
+        ON CONFLICT (product_id, platform_id) DO NOTHING
+    """), {"pid": product_id, "plid": platform_id})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/products/{product_id}/platforms/{platform_id}")
+async def unlink_product_platform(product_id: int, platform_id: int, db: AsyncSession = Depends(get_db)):
+    await db.execute(text("""
+        DELETE FROM product_platform_mappings WHERE product_id = :pid AND platform_id = :plid
+    """), {"pid": product_id, "plid": platform_id})
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/dspm/posture-metrics")
@@ -1031,36 +965,25 @@ async def get_dspm_posture_metrics(db: AsyncSession = Depends(get_db)):
             (SELECT COUNT(*) FROM metadata_platforms WHERE is_active = TRUE) AS platforms_count,
             (SELECT COUNT(*) FROM metadata_tables) AS tables_count,
             (SELECT COUNT(*) FROM metadata_columns) AS columns_count,
-            (SELECT COUNT(DISTINCT column_id) FROM metadata_tag_assignments WHERE column_id IS NOT NULL) AS tagged_columns_count,
-            (SELECT COUNT(*) FROM metadata_tags) AS total_tags_count,
             (SELECT COUNT(*) FROM policies) AS policies_count,
             (SELECT COUNT(*) FROM policies WHERE status = 'ENFORCED') AS enforced_policies_count,
             (SELECT COUNT(*) FROM policies WHERE status = 'DRAFT') AS draft_policies_count,
             (SELECT COUNT(*) FROM policies WHERE status = 'VALIDATED') AS validated_policies_count,
             (SELECT COUNT(*) FROM users WHERE is_active = TRUE) AS users_count,
-            (SELECT COUNT(*) FROM purposes WHERE is_active = TRUE) AS purposes_count,
+            (SELECT COUNT(*) FROM roles WHERE is_active = TRUE) AS groups_count,
             (SELECT COUNT(*) FROM data_access_requests WHERE status = 'APPROVED') AS active_grants_count,
             (SELECT COUNT(*) FROM data_access_requests WHERE status = 'PENDING') AS pending_requests_count
     """))).mappings().first()
 
     stats = dict(stats_row) if stats_row else {}
 
-    cat_rows = (await db.execute(text("""
-        SELECT mt.tag_category, COUNT(DISTINCT mta.column_id) AS count
-        FROM metadata_tag_assignments mta
-        JOIN metadata_tags mt ON mta.tag_id = mt.tag_id
-        GROUP BY mt.tag_category
-    """))).mappings().all()
-
-    stats["tag_categories"] = [dict(r) for r in cat_rows]
-
     # Calculate compliance readiness based on actual governance coverage
     policies_count = stats.get("policies_count", 0)
     enforced_count = stats.get("enforced_policies_count", 0)
 
     gdpr_score = min(100, 80 + int((enforced_count / max(1, policies_count)) * 20))
-    pci_score = min(100, 85 + int((stats.get("tagged_columns_count", 0) > 0) * 15))
-    hipaa_score = min(100, 90 + int((stats.get("purposes_count", 0) > 0) * 10))
+    pci_score = min(100, 85 + int((enforced_count > 0) * 15))
+    hipaa_score = min(100, 90 + int((enforced_count > 0) * 10))
 
     stats["compliance_scores"] = {
         "gdpr": gdpr_score,

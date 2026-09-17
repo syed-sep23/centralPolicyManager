@@ -4,8 +4,8 @@ import {
 } from '@mantine/core'
 import {
   IconShieldCheck, IconDatabase, IconTrendingUp, IconAlertTriangle,
-  IconLock, IconEye, IconShieldAlert, IconCircleCheck, IconHistory, IconFlame,
-  IconUsers, IconTarget, IconSend, IconServer,
+  IconLock, IconEye, IconShieldAlert, IconCircleCheck, IconHistory,
+  IconUsers, IconSend, IconServer,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { metadataApi } from '../../api/client'
@@ -22,14 +22,11 @@ export default function DashboardPage() {
   const platformsCount = m.platforms_count ?? 0
   const tablesCount = m.tables_count ?? 0
   const columnsCount = m.columns_count ?? 0
-  const taggedColumns = m.tagged_columns_count ?? 0
-  const totalTags = m.total_tags_count ?? 0
   const policiesCount = m.policies_count ?? 0
   const enforcedCount = m.enforced_policies_count ?? 0
   const draftCount = m.draft_policies_count ?? 0
   const validatedCount = m.validated_policies_count ?? 0
   const usersCount = m.users_count ?? 0
-  const purposesCount = m.purposes_count ?? 0
   const activeGrants = m.active_grants_count ?? 0
   const pendingRequests = m.pending_requests_count ?? 0
 
@@ -43,8 +40,6 @@ export default function DashboardPage() {
   const validatedPct = Math.round((validatedCount / totalPoliciesSafe) * 100)
   const draftPct = Math.max(0, 100 - enforcedPct - validatedPct)
 
-  const tagCategories: any[] = m.tag_categories ?? []
-
   return (
     <Stack gap="lg">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
@@ -56,7 +51,7 @@ export default function DashboardPage() {
             <Badge color="teal" variant="filled" size="md">Zero-Mock Audit</Badge>
           </Group>
           <Text c="dimmed" size="sm">
-            Continuous sensitive data discovery, real-time classification density, and active access governance across connected platforms.
+            Continuous sensitive data governance and active access policy enforcement across connected platforms.
           </Text>
         </Box>
       </Group>
@@ -82,18 +77,18 @@ export default function DashboardPage() {
 
         <Paper p="md" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
-            <Text size="xs" c="dimmed" fw={700} tt="uppercase">SENSITIVE TAG DENSITY</Text>
-            <ThemeIcon color="orange" variant="light" size="md" radius="md">
-              <IconFlame size={18} />
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">IDENTITY GOVERNANCE</Text>
+            <ThemeIcon color="cyan" variant="light" size="md" radius="md">
+              <IconUsers size={18} />
             </ThemeIcon>
           </Group>
           {dspmQuery.isLoading ? (
             <Skeleton height={32} />
           ) : (
-            <Title order={2} fw={700}>{taggedColumns} Classified</Title>
+            <Title order={2} fw={700}>{usersCount} Users</Title>
           )}
-          <Text size="xs" c="orange" mt={4} fw={500}>
-            {totalTags} Taxonomy Tags Bound to Data Columns
+          <Text size="xs" c="cyan" mt={4} fw={500}>
+            Directory Users with External Platform Mappings
           </Text>
         </Paper>
 
@@ -116,7 +111,7 @@ export default function DashboardPage() {
 
         <Paper p="md" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
-            <Text size="xs" c="dimmed" fw={700} tt="uppercase">ACCESS REQUESTS & PBAC</Text>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">ACCESS REQUESTS</Text>
             <ThemeIcon color="violet" variant="light" size="md" radius="md">
               <IconSend size={18} />
             </ThemeIcon>
@@ -127,7 +122,7 @@ export default function DashboardPage() {
             <Title order={2} fw={700}>{activeGrants} Active Grants</Title>
           )}
           <Text size="xs" c="violet" mt={4} fw={500}>
-            {pendingRequests} Pending Review • {purposesCount} Business Purposes
+            {pendingRequests} Pending Security Approval
           </Text>
         </Paper>
       </SimpleGrid>
@@ -210,31 +205,17 @@ export default function DashboardPage() {
         </Grid.Col>
       </Grid>
 
-      {/* ── Sensitive Classification Heatmap by Category ─────────────────────── */}
+      {/* ── System Governance & Identity Overview ─────────────────────────────── */}
       <Card p="md" radius="md" withBorder className="enterprise-card">
         <Group justify="space-between" mb="sm">
           <Box>
-            <Text fw={700} size="sm">Discovered Data Classifications & Categories</Text>
-            <Text size="xs" c="dimmed">Distribution of tagged sensitive columns across enterprise data taxonomy</Text>
+            <Text fw={700} size="sm">System Governance & Identity Distribution</Text>
+            <Text size="xs" c="dimmed">Distribution of identity directories, active platforms, and governance policies</Text>
           </Box>
-          <Badge color="violet" variant="light">{tagCategories.length} Categories Active</Badge>
+          <Badge color="indigo" variant="light">CES Active Mesh</Badge>
         </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
-          {tagCategories.map((cat: any) => (
-            <Paper key={cat.tag_category} p="sm" radius="md" withBorder className="enterprise-card">
-              <Group justify="space-between">
-                <Box>
-                  <Text size="xs" fw={700} c="dimmed">{cat.tag_category}</Text>
-                  <Title order={3} fw={700} mt={2}>{cat.count}</Title>
-                  <Text size="10px" c="dimmed">Governed Column Bindings</Text>
-                </Box>
-                <ThemeIcon color="violet" variant="light" size="lg" radius="md">
-                  <IconFlame size={18} />
-                </ThemeIcon>
-              </Group>
-            </Paper>
-          ))}
           <Paper p="sm" radius="md" withBorder className="enterprise-card">
             <Group justify="space-between">
               <Box>
@@ -250,12 +231,36 @@ export default function DashboardPage() {
           <Paper p="sm" radius="md" withBorder className="enterprise-card">
             <Group justify="space-between">
               <Box>
-                <Text size="xs" fw={700} c="dimmed">PBAC PURPOSES</Text>
-                <Title order={3} fw={700} mt={2}>{purposesCount}</Title>
-                <Text size="10px" c="dimmed">Contextual Business Mandates</Text>
+                <Text size="xs" fw={700} c="dimmed">DATA PLATFORMS</Text>
+                <Title order={3} fw={700} mt={2}>{platformsCount}</Title>
+                <Text size="10px" c="dimmed">Connected Cloud Warehouses</Text>
+              </Box>
+              <ThemeIcon color="blue" variant="light" size="lg" radius="md">
+                <IconServer size={18} />
+              </ThemeIcon>
+            </Group>
+          </Paper>
+          <Paper p="sm" radius="md" withBorder className="enterprise-card">
+            <Group justify="space-between">
+              <Box>
+                <Text size="xs" fw={700} c="dimmed">ACTIVE POLICIES</Text>
+                <Title order={3} fw={700} mt={2}>{policiesCount}</Title>
+                <Text size="10px" c="dimmed">Masking & Filter Rules</Text>
               </Box>
               <ThemeIcon color="indigo" variant="light" size="lg" radius="md">
-                <IconTarget size={18} />
+                <IconLock size={18} />
+              </ThemeIcon>
+            </Group>
+          </Paper>
+          <Paper p="sm" radius="md" withBorder className="enterprise-card">
+            <Group justify="space-between">
+              <Box>
+                <Text size="xs" fw={700} c="dimmed">ACTIVE GRANTS</Text>
+                <Title order={3} fw={700} mt={2}>{activeGrants}</Title>
+                <Text size="10px" c="dimmed">Time-Bound Entitlements</Text>
+              </Box>
+              <ThemeIcon color="violet" variant="light" size="lg" radius="md">
+                <IconSend size={18} />
               </ThemeIcon>
             </Group>
           </Paper>
