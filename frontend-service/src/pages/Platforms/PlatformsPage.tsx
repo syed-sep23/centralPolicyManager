@@ -1,16 +1,17 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Stack, Title, Text, Group, Button, Badge, Card, SimpleGrid, Modal,
-  TextInput, Select, PasswordInput, NumberInput, Paper, ActionIcon, Tooltip,
-  SegmentedControl, Box, Alert, Loader, Divider, ThemeIcon,
+  TextInput, Select, MultiSelect, PasswordInput, NumberInput, Paper, ActionIcon, Tooltip,
+  SegmentedControl, Box, Alert, Loader, Divider, ThemeIcon, Code,
 } from '@mantine/core'
 import {
   IconPlus, IconPlugConnected, IconCheck, IconX,
   IconRefresh, IconEdit, IconTrash, IconBrandAws, IconCloud, IconServer, IconBrandGoogle,
+  IconUser, IconUsers, IconInfoCircle, IconShieldCheck, IconLock,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
-import { metadataApi } from '../../api/client'
+import { metadataApi, rbacApi } from '../../api/client'
 
 const PLATFORM_OPTIONS = [
   { value: 'SNOWFLAKE', label: 'Snowflake', icon: IconCloud, color: 'blue' },
@@ -37,6 +38,10 @@ export default function PlatformsPage() {
   const [platformName, setPlatformName] = useState('')
   const [connectionAlias, setConnectionAlias] = useState('')
 
+  // Principal & Groups Assignment
+  const [assignedUserId, setAssignedUserId] = useState<string | null>(null)
+  const [assignedGroupIds, setAssignedGroupIds] = useState<string[]>([])
+
   // Connection Parameters
   const [accountIdentifier, setAccountIdentifier] = useState('')
   const [warehouse, setWarehouse] = useState('')
@@ -61,6 +66,11 @@ export default function PlatformsPage() {
   // Queries
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
   const drivers = useQuery({ queryKey: ['drivers'], queryFn: () => metadataApi.drivers() })
+  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => rbacApi.users() })
+  const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: () => rbacApi.roles() })
+
+  const userList: any[] = usersQuery.data?.data ?? []
+  const groupList: any[] = rolesQuery.data?.data ?? []
 
   const [syncingPlatformId, setSyncingPlatformId] = useState<number | null>(null)
 
@@ -192,6 +202,19 @@ export default function PlatformsPage() {
     },
   })
 
+  const selectedUserObj = useMemo(() => {
+    if (!assignedUserId) return null
+    return userList.find((u) => String(u.user_id) === assignedUserId) || null
+  }, [assignedUserId, userList])
+
+  const selectedUserExternalMapping = useMemo(() => {
+    if (!selectedUserObj) return null
+    const target = (platformType || platformCode || '').toUpperCase()
+    return (selectedUserObj.external_mappings || []).find((em: any) =>
+      em.platform_code && target.includes(em.platform_code.toUpperCase())
+    ) || null
+  }, [selectedUserObj, platformType, platformCode])
+
   const handleQuickTest = async (p: any) => {
     setTestingPlatformId(p.platform_id)
     notifications.show({
@@ -203,8 +226,10 @@ export default function PlatformsPage() {
     })
 
     const testData = {
-      platform_type: p.platform_code,
+      platform_type: p.driver_code || p.platform_code,
       platform_code: p.platform_code,
+      assigned_user_id: p.assigned_user_id,
+      assigned_group_ids: p.assigned_group_ids,
       account_identifier: p.account_identifier,
       warehouse: p.warehouse,
       default_database: p.default_database,
@@ -271,6 +296,8 @@ export default function PlatformsPage() {
     setPlatformCode('')
     setPlatformName('')
     setConnectionAlias('')
+    setAssignedUserId(null)
+    setAssignedGroupIds([])
     setAccountIdentifier('')
     setWarehouse('')
     setDefaultDatabase('')
@@ -291,6 +318,38 @@ export default function PlatformsPage() {
 
   const handleSelectDriver = (driver: string) => {
     setPlatformType(driver)
+    if (assignedUserId) {
+      const u = userList.find((usr) => String(usr.user_id) === assignedUserId)
+      if (u) {
+        const mapping = (u.external_mappings || []).find((em: any) =>
+          em.platform_code && driver.toUpperCase().includes(em.platform_code.toUpperCase())
+        )
+        if (mapping && mapping.external_user_id) {
+          setDbUser(mapping.external_user_id)
+        } else {
+          setDbUser(u.username)
+        }
+      }
+    }
+  }
+
+  const handleSelectUser = (userIdStr: string | null) => {
+    setAssignedUserId(userIdStr)
+    if (!userIdStr) {
+      setDbUser('')
+      return
+    }
+    const u = userList.find((usr) => String(usr.user_id) === userIdStr)
+    if (!u) return
+    const target = (platformType || platformCode || '').toUpperCase()
+    const mapping = (u.external_mappings || []).find((em: any) =>
+      em.platform_code && target.includes(em.platform_code.toUpperCase())
+    )
+    if (mapping && mapping.external_user_id) {
+      setDbUser(mapping.external_user_id)
+    } else {
+      setDbUser(u.username)
+    }
   }
 
   const handleOpenCreate = () => {
@@ -307,6 +366,9 @@ export default function PlatformsPage() {
     setConnectionAlias(p.connection_alias || '')
     const driver = p.driver_code || PLATFORM_OPTIONS.find((o) => (p.platform_code || '').toUpperCase().includes(o.value))?.value || 'CUSTOM_JDBC'
     setPlatformType(driver)
+
+    setAssignedUserId(p.assigned_user_id ? String(p.assigned_user_id) : null)
+    setAssignedGroupIds((p.assigned_group_ids || []).map(String))
 
     setAccountIdentifier(p.account_identifier || (driver === 'SNOWFLAKE' ? 'demo.us-east-1' : ''))
     setWarehouse(p.warehouse || (driver === 'SNOWFLAKE' ? 'CES_WH' : ''))
@@ -329,6 +391,8 @@ export default function PlatformsPage() {
     testMutation.mutate({
       platform_type: platformType,
       platform_code: platformCode,
+      assigned_user_id: assignedUserId ? Number(assignedUserId) : undefined,
+      assigned_group_ids: assignedGroupIds.map(Number),
       account_identifier: accountIdentifier,
       host,
       port: port ? Number(port) : undefined,
@@ -353,6 +417,8 @@ export default function PlatformsPage() {
         platform_name: platformName,
         driver_code: platformType,
         connection_alias: connectionAlias || `${platformCode.toLowerCase()}_conn`,
+        assigned_user_id: assignedUserId ? Number(assignedUserId) : null,
+        assigned_group_ids: assignedGroupIds.map(Number),
         account_identifier: accountIdentifier,
         host,
         port: port ? Number(port) : undefined,
@@ -386,6 +452,8 @@ export default function PlatformsPage() {
       const testData = {
         platform_type: platformType,
         platform_code: platformCode,
+        assigned_user_id: assignedUserId ? Number(assignedUserId) : undefined,
+        assigned_group_ids: assignedGroupIds.map(Number),
         account_identifier: accountIdentifier,
         host,
         port: port ? Number(port) : undefined,
@@ -531,7 +599,46 @@ export default function PlatformsPage() {
               <Text size="xs" c="dimmed">
                 Alias: <Text span ff="monospace" fw={600}>{p.connection_alias || 'default_conn'}</Text> • Native Driver Active
               </Text>
-              <Text size="xs" c="dimmed" mb="md">
+
+              {p.assigned_user_id && (
+                <Group gap={6} mt={4} wrap="wrap">
+                  <Text size="xs" c="dimmed">Assigned User:</Text>
+                  {(() => {
+                    const u = userList.find((usr) => usr.user_id === p.assigned_user_id)
+                    const mapping = (u?.external_mappings || []).find((em: any) =>
+                      em.platform_code && (p.driver_code || p.platform_code || '').toUpperCase().includes(em.platform_code.toUpperCase())
+                    )
+                    return (
+                      <Group gap={4}>
+                        <Badge size="xs" color="indigo" variant="light" leftSection={<IconUser size={10} />}>
+                          {u?.display_name || u?.username || `User #${p.assigned_user_id}`}
+                        </Badge>
+                        {mapping?.external_user_id && (
+                          <Badge size="xs" color="teal" variant="outline">
+                            Ext ID: {mapping.external_user_id}
+                          </Badge>
+                        )}
+                      </Group>
+                    )
+                  })()}
+                </Group>
+              )}
+
+              {p.assigned_group_ids && p.assigned_group_ids.length > 0 && (
+                <Group gap={6} mt={4} wrap="wrap">
+                  <Text size="xs" c="dimmed">Assigned Groups:</Text>
+                  {p.assigned_group_ids.map((gid: number) => {
+                    const grp = groupList.find((g) => g.role_id === gid)
+                    return (
+                      <Badge key={gid} size="xs" color="violet" variant="light" leftSection={<IconUsers size={10} />}>
+                        {grp?.role_name || `Group #${gid}`}
+                      </Badge>
+                    )
+                  })}
+                </Group>
+              )}
+
+              <Text size="xs" c="dimmed" mt={4} mb="md">
                 Last Tested:{' '}
                 <Text span fw={500} c={p.last_tested_at ? undefined : 'dimmed'}>
                   {p.last_tested_at ? new Date(p.last_tested_at).toLocaleString() : 'Never tested'}
@@ -617,6 +724,19 @@ export default function PlatformsPage() {
             />
           </Group>
 
+          <MultiSelect
+            label="Authorized Identity Groups (0..N)"
+            placeholder="Assign groups authorized for this data platform..."
+            data={groupList.map((g) => ({
+              value: String(g.role_id),
+              label: `${g.role_name} (${g.role_code})`,
+            }))}
+            value={assignedGroupIds}
+            onChange={setAssignedGroupIds}
+            searchable
+            clearable
+          />
+
           <Divider label="Driver Parameters" labelPosition="center" my="xs" />
 
           {/* Dynamic Connection Form Fields */}
@@ -665,14 +785,40 @@ export default function PlatformsPage() {
             </Stack>
           )}
 
-          <Group grow>
-            <TextInput
-              label="Authentication User / Service Account"
-              placeholder="e.g. CES_GOVERNANCE_USER"
-              required
-              value={dbUser}
-              onChange={(e) => setDbUser(e.target.value)}
-            />
+          <Group grow align="flex-start">
+            <Stack gap={4}>
+              <Select
+                label="Select User from Directory"
+                placeholder="Choose user identity..."
+                required
+                data={userList.map((u) => {
+                  const target = (platformType || platformCode || '').toUpperCase()
+                  const mapping = (u.external_mappings || []).find((em: any) =>
+                    em.platform_code && target.includes(em.platform_code.toUpperCase())
+                  )
+                  const extSuffix = mapping?.external_user_id ? ` • Ext ID: ${mapping.external_user_id}` : ''
+                  return {
+                    value: String(u.user_id),
+                    label: `${u.display_name || u.username} (@${u.username})${extSuffix}`,
+                  }
+                })}
+                value={assignedUserId}
+                onChange={handleSelectUser}
+                searchable
+                clearable
+              />
+              {selectedUserObj && (
+                selectedUserExternalMapping?.external_user_id ? (
+                  <Text size="xs" c="teal" fw={600}>
+                    ✓ Platform External User ID: <Code color="teal" fw={700}>{selectedUserExternalMapping.external_user_id}</Code> (passed to {platformType})
+                  </Text>
+                ) : (
+                  <Text size="xs" c="orange">
+                    ⚠️ No external ID mapped for {platformType} (will pass username: @{selectedUserObj.username})
+                  </Text>
+                )
+              )}
+            </Stack>
             <PasswordInput
               label="Password / Token / Key"
               placeholder="••••••••••••"

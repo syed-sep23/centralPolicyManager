@@ -2,13 +2,15 @@ import { useState, useMemo, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Stack, Title, Text, Card, Table, Badge, Group, Avatar, Box, Skeleton,
-  Tabs, Button, Modal, TextInput, Select, SimpleGrid, Paper, ThemeIcon,
+  Tabs, Button, Modal, TextInput, Select, MultiSelect, Switch, Grid, SimpleGrid, Paper, ThemeIcon,
   Drawer, Divider, Alert, Tooltip, ActionIcon, ScrollArea, Code,
 } from '@mantine/core'
 import {
   IconUsers, IconFolder, IconPlus, IconRefresh, IconCheck, IconTrash,
   IconKey, IconShieldCheck, IconId, IconLayersLinked, IconArrowRight,
-  IconUserPlus, IconFolderPlus, IconInfoCircle, IconTag,
+  IconUserPlus, IconFolderPlus, IconInfoCircle, IconTag, IconEdit,
+  IconCloud, IconBrandAws, IconServer, IconBrandGoogle, IconWorld,
+  IconCalendar, IconClock, IconDeviceDesktop, IconUserCheck,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
@@ -16,6 +18,16 @@ import { rbacApi } from '../../api/client'
 
 const VALID_ROLE_TABS = ['users', 'groups', 'attributes'] as const
 type RoleTab = typeof VALID_ROLE_TABS[number]
+
+export const SUPPORTED_PLATFORMS_CONFIG = [
+  { code: 'SNOWFLAKE', name: 'Snowflake Data Cloud', icon: IconCloud, color: 'blue', placeholder: 'e.g. USERNAME_SF or corp_sf_id' },
+  { code: 'REDSHIFT', name: 'Amazon Redshift', icon: IconBrandAws, color: 'orange', placeholder: 'e.g. awsuser or redshift_user_id' },
+  { code: 'DATABRICKS', name: 'Databricks Unity Catalog', icon: IconServer, color: 'red', placeholder: 'e.g. user@databricks.corp' },
+  { code: 'BIGQUERY', name: 'Google Cloud BigQuery', icon: IconBrandGoogle, color: 'teal', placeholder: 'e.g. user@project.iam.gserviceaccount.com' },
+  { code: 'POSTGRESQL', name: 'PostgreSQL Database', icon: IconServer, color: 'cyan', placeholder: 'e.g. pg_username' },
+  { code: 'TRINO', name: 'Trino / Starburst Galaxy', icon: IconServer, color: 'pink', placeholder: 'e.g. trino_user_id' },
+  { code: 'CUSTOM_JDBC', name: 'Enterprise Generic JDBC', icon: IconDeviceDesktop, color: 'indigo', placeholder: 'e.g. jdbc_external_id' },
+]
 
 export default function RoleManagerPage() {
   const { tab } = useParams<{ tab?: string }>()
@@ -49,6 +61,18 @@ export default function RoleManagerPage() {
   const [createUserModal, setCreateUserModal] = useState(false)
   const [createGroupModal, setCreateGroupModal] = useState(false)
 
+  // Edit User Modal state
+  const [editUserModalOpened, setEditUserModalOpened] = useState(false)
+  const [editingUser, setEditingUser] = useState<any | null>(null)
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editCountry, setEditCountry] = useState('')
+  const [editJobTitle, setEditJobTitle] = useState('')
+  const [editDepartment, setEditDepartment] = useState('')
+  const [editIsActive, setEditIsActive] = useState(true)
+  const [editGroupIds, setEditGroupIds] = useState<string[]>([])
+  const [editExternalMappings, setEditExternalMappings] = useState<Record<string, string>>({})
+
   // Forms
   const [newUsername, setNewUsername] = useState('')
   const [newEmail, setNewEmail] = useState('')
@@ -65,6 +89,7 @@ export default function RoleManagerPage() {
   // ─── Queries ─────────────────────────────────────────────────────────────────
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => rbacApi.users() })
   const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: () => rbacApi.roles() })
+  const supportedPlatformsQuery = useQuery({ queryKey: ['supported-platforms'], queryFn: () => rbacApi.supportedPlatforms() })
 
   const userList: any[] = usersQuery.data?.data ?? []
   const groupList: any[] = rolesQuery.data?.data ?? []
@@ -172,6 +197,71 @@ export default function RoleManagerPage() {
       notifications.show({ title: 'Group Attribute Removed', message: 'Attribute removed from group members', color: 'orange' })
     },
   })
+
+  const updateUserMutation = useMutation({
+    mutationFn: ({ userId, data }: { userId: number; data: any }) => rbacApi.updateUser(userId, data),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['effective-attrs'] })
+      if (selectedUser && selectedUser.user_id === editingUser?.user_id) {
+        setSelectedUser(res.data)
+      }
+      setEditUserModalOpened(false)
+      notifications.show({
+        title: 'User Profile & Platform Mappings Saved ✅',
+        message: 'Updated user identity and platform-specific external user IDs successfully.',
+        color: 'teal',
+        icon: <IconCheck />,
+      })
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Update Failed',
+        message: err.response?.data?.detail || 'Failed to update user profile',
+        color: 'red',
+      })
+    },
+  })
+
+  const handleOpenEditUser = (u: any) => {
+    setEditingUser(u)
+    setEditDisplayName(u.display_name || u.username || '')
+    setEditEmail(u.email || '')
+    setEditCountry(u.country || '')
+    setEditJobTitle(u.job_title || 'Data Practitioner')
+    setEditDepartment(u.department || 'Engineering')
+    setEditIsActive(u.is_active !== false)
+    setEditGroupIds((u.groups || []).map((g: any) => String(g.role_id)))
+    const mappingMap: Record<string, string> = {}
+    ;(u.external_mappings || []).forEach((em: any) => {
+      if (em.platform_code) {
+        mappingMap[em.platform_code.toUpperCase()] = em.external_user_id || ''
+      }
+    })
+    setEditExternalMappings(mappingMap)
+    setEditUserModalOpened(true)
+  }
+
+  const handleSaveEditUser = () => {
+    if (!editingUser) return
+    const mappingList = Object.entries(editExternalMappings).map(([platform_code, external_user_id]) => ({
+      platform_code,
+      external_user_id: (external_user_id || '').trim(),
+    }))
+    updateUserMutation.mutate({
+      userId: editingUser.user_id,
+      data: {
+        display_name: editDisplayName,
+        email: editEmail,
+        country: editCountry,
+        department: editDepartment,
+        job_title: editJobTitle,
+        is_active: editIsActive,
+        group_ids: editGroupIds.map(Number),
+        external_mappings: mappingList,
+      },
+    })
+  }
 
   // Open user drawer
   const handleInspectUser = (u: any) => {
@@ -291,6 +381,7 @@ export default function RoleManagerPage() {
                   <Table.Th>User Identity</Table.Th>
                   <Table.Th>Department & Title</Table.Th>
                   <Table.Th>Group Membership (0..N)</Table.Th>
+                  <Table.Th>External Platform Mappings</Table.Th>
                   <Table.Th>Direct Attributes</Table.Th>
                   <Table.Th>Action</Table.Th>
                 </Table.Tr>
@@ -298,11 +389,11 @@ export default function RoleManagerPage() {
               <Table.Tbody>
                 {usersQuery.isLoading ? (
                   [...Array(5)].map((_, i) => (
-                    <Table.Tr key={i}><Table.Td colSpan={5}><Skeleton height={36} /></Table.Td></Table.Tr>
+                    <Table.Tr key={i}><Table.Td colSpan={6}><Skeleton height={36} /></Table.Td></Table.Tr>
                   ))
                 ) : userList.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={5} style={{ textAlign: 'center', padding: '32px' }}>
+                    <Table.Td colSpan={6} style={{ textAlign: 'center', padding: '32px' }}>
                       <Text size="sm" c="dimmed">No identities found. Click "Add User" or "Sync from IdP".</Text>
                     </Table.Td>
                   </Table.Tr>
@@ -310,6 +401,7 @@ export default function RoleManagerPage() {
                   userList.map((u: any) => {
                     const groups: any[] = u.groups || []
                     const directAttrs: any[] = u.direct_attributes || []
+                    const extMaps: any[] = u.external_mappings || []
                     return (
                       <Table.Tr key={u.user_id}>
                         <Table.Td>
@@ -318,7 +410,12 @@ export default function RoleManagerPage() {
                               {(u.display_name || u.username)[0].toUpperCase()}
                             </Avatar>
                             <Box>
-                              <Text size="sm" fw={600}>{u.display_name || u.username}</Text>
+                              <Group gap={6}>
+                                <Text size="sm" fw={600}>{u.display_name || u.username}</Text>
+                                {u.country && (
+                                  <Badge size="xs" variant="light" color="cyan">{u.country}</Badge>
+                                )}
+                              </Group>
                               <Text size="xs" c="dimmed">{u.email}</Text>
                             </Box>
                           </Group>
@@ -343,6 +440,24 @@ export default function RoleManagerPage() {
                           )}
                         </Table.Td>
                         <Table.Td>
+                          {extMaps.length > 0 ? (
+                            <Group gap={4}>
+                              {extMaps.map((em: any, idx: number) => {
+                                const conf = SUPPORTED_PLATFORMS_CONFIG.find((c) => c.code === em.platform_code)
+                                return (
+                                  <Tooltip key={idx} label={`Platform: ${em.platform_code} • ID: ${em.external_user_id}`}>
+                                    <Badge size="xs" color={conf?.color || 'blue'} variant="light">
+                                      {em.platform_code}: {em.external_user_id}
+                                    </Badge>
+                                  </Tooltip>
+                                )
+                              })}
+                            </Group>
+                          ) : (
+                            <Badge size="xs" color="gray" variant="dot">No Mappings</Badge>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
                           {directAttrs.length > 0 ? (
                             <Group gap={4}>
                               {directAttrs.map((a: any, i: number) => (
@@ -356,15 +471,25 @@ export default function RoleManagerPage() {
                           )}
                         </Table.Td>
                         <Table.Td>
-                          <Button
-                            size="xs"
-                            variant="light"
-                            color="indigo"
-                            leftSection={<IconShieldCheck size={14} />}
-                            onClick={() => handleInspectUser(u)}
-                          >
-                            Inspect ABAC
-                          </Button>
+                          <Group gap="xs" wrap="nowrap">
+                            <Button
+                              size="xs"
+                              variant="light"
+                              color="indigo"
+                              leftSection={<IconEdit size={14} />}
+                              onClick={() => handleOpenEditUser(u)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="default"
+                              leftSection={<IconShieldCheck size={14} />}
+                              onClick={() => handleInspectUser(u)}
+                            >
+                              Inspect ABAC
+                            </Button>
+                          </Group>
                         </Table.Td>
                       </Table.Tr>
                     )
@@ -498,19 +623,117 @@ export default function RoleManagerPage() {
           <Stack gap="md">
             {/* User Profile Overview */}
             <Paper p="md" radius="md" withBorder>
-              <Group gap="md">
-                <Avatar color="indigo" size="lg" radius="md">
-                  {(selectedUser.display_name || selectedUser.username)[0].toUpperCase()}
-                </Avatar>
-                <Box>
-                  <Text fw={700} size="md">{selectedUser.display_name || selectedUser.username}</Text>
-                  <Text size="xs" c="dimmed">{selectedUser.email}</Text>
-                  <Badge size="xs" color="teal" variant="light" mt={4}>
-                    IAM Sync ID: usr-{selectedUser.user_id}
-                  </Badge>
-                </Box>
+              <Group justify="space-between" align="flex-start">
+                <Group gap="md">
+                  <Avatar color="indigo" size="lg" radius="md">
+                    {(selectedUser.display_name || selectedUser.username)[0].toUpperCase()}
+                  </Avatar>
+                  <Box>
+                    <Group gap="xs">
+                      <Text fw={700} size="md">{selectedUser.display_name || selectedUser.username}</Text>
+                      {selectedUser.country && (
+                        <Badge size="xs" color="cyan" variant="light">{selectedUser.country}</Badge>
+                      )}
+                      <Badge size="xs" color={selectedUser.is_active !== false ? 'teal' : 'gray'}>
+                        {selectedUser.is_active !== false ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </Group>
+                    <Text size="xs" c="dimmed">{selectedUser.email}</Text>
+                    <Text size="xs" c="dimmed">{selectedUser.job_title || 'Data Practitioner'} • {selectedUser.department || 'Engineering'}</Text>
+                  </Box>
+                </Group>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="indigo"
+                  leftSection={<IconEdit size={14} />}
+                  onClick={() => handleOpenEditUser(selectedUser)}
+                >
+                  Edit Profile & Mappings
+                </Button>
               </Group>
             </Paper>
+
+            {/* IAM & Audit Metadata */}
+            <Card withBorder p="sm" radius="md">
+              <Text fw={600} size="xs" tt="uppercase" c="dimmed" mb={8}>IAM & Audit Metadata</Text>
+              <SimpleGrid cols={2} spacing="xs">
+                <Box>
+                  <Text size="xs" c="dimmed">IAM Sync Identifier</Text>
+                  <Code color="indigo">usr-{selectedUser.user_id}</Code>
+                </Box>
+                <Box>
+                  <Text size="xs" c="dimmed">Username (Internal)</Text>
+                  <Text size="xs" fw={500}>@{selectedUser.username}</Text>
+                </Box>
+                <Box>
+                  <Text size="xs" c="dimmed">Created At</Text>
+                  <Text size="xs">{selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleString() : '2026-09-01'}</Text>
+                </Box>
+                <Box>
+                  <Text size="xs" c="dimmed">Last Updated</Text>
+                  <Text size="xs">{selectedUser.updated_at ? new Date(selectedUser.updated_at).toLocaleString() : 'Recently'}</Text>
+                </Box>
+                <Box style={{ gridColumn: 'span 2' }}>
+                  <Text size="xs" c="dimmed">LDAP / Directory DN</Text>
+                  <Text size="xs" style={{ wordBreak: 'break-all' }}>
+                    {selectedUser.ldap_dn || `uid=${selectedUser.username},ou=users,dc=ces,dc=internal`}
+                  </Text>
+                </Box>
+              </SimpleGrid>
+            </Card>
+
+            {/* External Platform Mappings Card */}
+            <Card withBorder p="md" radius="md">
+              <Group justify="space-between" mb="xs">
+                <Box>
+                  <Title order={5}>External Platform User Mappings</Title>
+                  <Text size="xs" c="dimmed">
+                    Platform-specific credentials used when connecting to data engines
+                  </Text>
+                </Box>
+                <ActionIcon
+                  variant="light"
+                  color="indigo"
+                  size="sm"
+                  onClick={() => handleOpenEditUser(selectedUser)}
+                >
+                  <IconEdit size={14} />
+                </ActionIcon>
+              </Group>
+              {(selectedUser.external_mappings || []).length > 0 ? (
+                <Stack gap={6}>
+                  {(selectedUser.external_mappings || []).map((em: any, idx: number) => {
+                    const conf = SUPPORTED_PLATFORMS_CONFIG.find((c) => c.code === em.platform_code)
+                    const IconComp = conf?.icon || IconServer
+                    return (
+                      <Paper key={idx} p="xs" withBorder radius="sm">
+                        <Group justify="space-between">
+                          <Group gap="xs">
+                            <ThemeIcon size="sm" color={conf?.color || 'blue'} variant="light">
+                              <IconComp size={14} />
+                            </ThemeIcon>
+                            <Box>
+                              <Text size="xs" fw={600}>{conf?.name || em.platform_code}</Text>
+                              <Badge size="xs" variant="outline" color={conf?.color || 'blue'}>
+                                {em.platform_code}
+                              </Badge>
+                            </Box>
+                          </Group>
+                          <Code fw={700} color={conf?.color || 'blue'}>{em.external_user_id}</Code>
+                        </Group>
+                      </Paper>
+                    )
+                  })}
+                </Stack>
+              ) : (
+                <Alert color="gray" variant="light" p="xs">
+                  <Text size="xs">
+                    No external platform mappings configured. Click "Edit Profile & Mappings" to map Snowflake, Redshift, Databricks, or BigQuery user IDs.
+                  </Text>
+                </Alert>
+              )}
+            </Card>
 
             {/* Effective Attribute Map Banner */}
             <Paper p="md" radius="md" withBorder>
@@ -639,6 +862,230 @@ export default function RoleManagerPage() {
           </Stack>
         )}
       </Drawer>
+
+      {/* ── EDIT USER MODAL (BASIC INFO, IAM, AUDIT, GROUPS, EXTERNAL MAPPINGS) ─ */}
+      <Modal
+        opened={editUserModalOpened}
+        onClose={() => setEditUserModalOpened(false)}
+        title={
+          <Group gap="xs">
+            <ThemeIcon color="indigo" variant="light" size="lg" radius="md">
+              <IconEdit size={20} />
+            </ThemeIcon>
+            <Box>
+              <Title order={4}>Edit User Identity & External Mappings</Title>
+              <Text size="xs" c="dimmed">
+                IAM Sync: usr-{editingUser?.user_id} • @{editingUser?.username}
+              </Text>
+            </Box>
+          </Group>
+        }
+        size="xl"
+        radius="md"
+      >
+        {editingUser && (
+          <Stack gap="md">
+            {/* Basic Information */}
+            <Card withBorder p="md" radius="md">
+              <Title order={5} mb="xs">1. Basic Identity Information</Title>
+              <Grid gutter="md">
+                <Grid.Col span={{ base: 12, sm: 6 }}>
+                  <TextInput
+                    label="Full Name / Display Name"
+                    placeholder="e.g. Alice Chen"
+                    required
+                    value={editDisplayName}
+                    onChange={(e) => setEditDisplayName(e.target.value)}
+                  />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 6 }}>
+                  <TextInput
+                    label="Email Address"
+                    placeholder="e.g. alice.chen@acme.corp"
+                    required
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                  />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  <TextInput
+                    label="Country / Region"
+                    placeholder="e.g. US, SG, DE, UK, IN"
+                    value={editCountry}
+                    onChange={(e) => setEditCountry(e.target.value)}
+                  />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  <TextInput
+                    label="Position / Title"
+                    placeholder="e.g. Lead Data Engineer"
+                    value={editJobTitle}
+                    onChange={(e) => setEditJobTitle(e.target.value)}
+                  />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  <TextInput
+                    label="Department"
+                    placeholder="e.g. Engineering, Analytics"
+                    value={editDepartment}
+                    onChange={(e) => setEditDepartment(e.target.value)}
+                  />
+                </Grid.Col>
+                <Grid.Col span={12}>
+                  <Switch
+                    label="Active Identity (Permit Authentication & Entitlement Evaluations)"
+                    checked={editIsActive}
+                    onChange={(e) => setEditIsActive(e.currentTarget.checked)}
+                    color="teal"
+                  />
+                </Grid.Col>
+              </Grid>
+            </Card>
+
+            {/* IAM & Audit Information (System Managed) */}
+            <Card withBorder p="md" radius="md" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+              <Title order={5} mb="xs" c="dimmed">2. IAM & Directory Audit Information</Title>
+              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+                <Paper p="xs" radius="sm" withBorder>
+                  <Text size="xs" c="dimmed">IAM Identifier</Text>
+                  <Code fw={700} color="indigo">usr-{editingUser.user_id}</Code>
+                </Paper>
+                <Paper p="xs" radius="sm" withBorder>
+                  <Text size="xs" c="dimmed">Date Created</Text>
+                  <Text size="xs" fw={500}>
+                    {editingUser.created_at ? new Date(editingUser.created_at).toLocaleString() : '2026-09-01'}
+                  </Text>
+                </Paper>
+                <Paper p="xs" radius="sm" withBorder>
+                  <Text size="xs" c="dimmed">Last Updated</Text>
+                  <Text size="xs" fw={500}>
+                    {editingUser.updated_at ? new Date(editingUser.updated_at).toLocaleString() : 'Recently'}
+                  </Text>
+                </Paper>
+                <Paper p="xs" radius="sm" withBorder>
+                  <Text size="xs" c="dimmed">Directory Username</Text>
+                  <Text size="xs" fw={600}>@{editingUser.username}</Text>
+                </Paper>
+                <Paper p="xs" radius="sm" withBorder>
+                  <Text size="xs" c="dimmed">Last Active / Synced</Text>
+                  <Text size="xs" fw={500} c="teal">
+                    {editingUser.last_synced_at ? new Date(editingUser.last_synced_at).toLocaleString() : 'Active (Online)'}
+                  </Text>
+                </Paper>
+                <Paper p="xs" radius="sm" withBorder>
+                  <Text size="xs" c="dimmed">LDAP / IdP DN</Text>
+                  <Text size="xs" truncate>
+                    {editingUser.ldap_dn || `uid=${editingUser.username},ou=users,dc=acme,dc=corp`}
+                  </Text>
+                </Paper>
+              </SimpleGrid>
+            </Card>
+
+            {/* Group Memberships */}
+            <Card withBorder p="md" radius="md">
+              <Title order={5} mb="xs">3. Group Memberships (0..N)</Title>
+              <Text size="xs" c="dimmed" mb="sm">
+                Select groups this user belongs to. The user automatically inherits ABAC attributes and platform entitlements from all selected groups.
+              </Text>
+              <MultiSelect
+                placeholder="Assign to one or more identity groups..."
+                data={groupList.map((g) => ({ value: String(g.role_id), label: g.role_name }))}
+                value={editGroupIds}
+                onChange={setEditGroupIds}
+                searchable
+                clearable
+              />
+            </Card>
+
+            {/* External User Mapping */}
+            <Card withBorder p="md" radius="md">
+              <Group justify="space-between" mb="xs">
+                <Box>
+                  <Title order={5}>4. External User Mapping</Title>
+                  <Text size="xs" c="dimmed">
+                    Configure platform-specific external user IDs for all supported data platforms.
+                  </Text>
+                </Box>
+                <Badge color="indigo" variant="light">Engine-Specific Credentials</Badge>
+              </Group>
+
+              <Alert
+                icon={<IconInfoCircle size={16} />}
+                color="blue"
+                variant="light"
+                mb="md"
+                p="xs"
+              >
+                <Text size="xs">
+                  <strong>Important:</strong> When establishing connections or testing credentials on target platforms, Central Entitlement Service passes the respective platform's <strong>External User ID</strong> rather than the internal CES username.
+                </Text>
+              </Alert>
+
+              <Stack gap="sm">
+                {SUPPORTED_PLATFORMS_CONFIG.map((platform) => {
+                  const IconComponent = platform.icon
+                  const currentVal = editExternalMappings[platform.code] || ''
+                  return (
+                    <Paper key={platform.code} p="xs" withBorder radius="sm">
+                      <Grid align="center">
+                        <Grid.Col span={{ base: 12, sm: 5 }}>
+                          <Group gap="xs">
+                            <ThemeIcon size="md" color={platform.color} variant="light" radius="sm">
+                              <IconComponent size={18} />
+                            </ThemeIcon>
+                            <Box>
+                              <Text size="xs" fw={600}>{platform.name}</Text>
+                              <Badge size="xs" variant="outline" color={platform.color}>
+                                {platform.code}
+                              </Badge>
+                            </Box>
+                          </Group>
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 12, sm: 7 }}>
+                          <TextInput
+                            size="xs"
+                            placeholder={platform.placeholder}
+                            value={currentVal}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setEditExternalMappings((prev) => ({
+                                ...prev,
+                                [platform.code]: val,
+                              }))
+                            }}
+                            rightSection={
+                              currentVal.trim() ? (
+                                <ThemeIcon size="xs" color="teal" variant="light">
+                                  <IconCheck size={12} />
+                                </ThemeIcon>
+                              ) : null
+                            }
+                          />
+                        </Grid.Col>
+                      </Grid>
+                    </Paper>
+                  )
+                })}
+              </Stack>
+            </Card>
+
+            {/* Actions */}
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={() => setEditUserModalOpened(false)}>
+                Cancel
+              </Button>
+              <Button
+                color="indigo"
+                loading={updateUserMutation.isPending}
+                onClick={handleSaveEditUser}
+                leftSection={<IconCheck size={16} />}
+              >
+                Save Identity & External Mappings
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       {/* ── GROUP ATTRIBUTES MODAL ─────────────────────────────────────────── */}
       <Modal

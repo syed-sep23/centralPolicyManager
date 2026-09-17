@@ -33,6 +33,7 @@ class RedshiftPolicyCompiler:
         policy_code = (raw_payload.get("policy_code") or "UNKNOWN").lower().replace("-", "_")
         policy_name = raw_payload.get("policy_name") or "UNKNOWN"
         version_id = raw_payload.get("version_id") or "1"
+        target_users = raw_payload.get("target_users") or []
 
         lines = [
             "-- ============================================================================",
@@ -42,12 +43,26 @@ class RedshiftPolicyCompiler:
             f"-- Version ID: {version_id}",
             f"-- Generated At: {datetime.now().isoformat()}",
             "-- Platform: Amazon Redshift (Native DDM & RLS SQL)",
+            "-- Per-User Compilation: Enabled (Separately compiled for each user in groups)",
             "-- ============================================================================",
             "",
+        ]
+
+        if target_users:
+            lines.append("-- ─── Target Users in Scope (Resolved from Groups) ──────────────────────────")
+            for tu in target_users:
+                uname = tu.get("username", "unknown")
+                disp = tu.get("display_name", uname)
+                rs_id = tu.get("redshift_user") or uname.lower()
+                grp = tu.get("role_code") or "MEMBER"
+                lines.append(f"--  * User: {disp} ({uname}) | Redshift User: {rs_id} | Group: {grp}")
+            lines.append("")
+
+        lines.extend([
             "-- ─── 1. Redshift Environment Context ─────────────────────────────────────────",
             "-- Ensure this script is executed with superuser or sys:secadmin permissions.",
             "",
-        ]
+        ])
 
         rules = raw_payload.get("rules", [])
         if not rules:
@@ -57,6 +72,8 @@ class RedshiftPolicyCompiler:
         for idx, rule in enumerate(rules, 1):
             rule_name = rule.get("rule_name", f"Rule {idx}")
             effect = rule.get("effect", "ALLOW")
+            member_users = rule.get("member_users", [])
+
             lines.append(
                 f"-- ─── Rule #{idx}: {rule_name} (Effect: {effect}) ─────────────────────"
             )
@@ -101,11 +118,6 @@ class RedshiftPolicyCompiler:
 
                         mask_policy_name = f"mask_{table_name}_{mask_col}"
 
-                        role_checks = []
-                        for r in role_codes:
-                            role_checks.append(f"pg_has_role(CURRENT_USER, '{r}', 'MEMBER')")
-                        role_checks_sql = " OR ".join(role_checks) if role_checks else "FALSE"
-
                         purpose_clause = ""
                         if purposes:
                             purpose_list = ", ".join([f"'{p}'" for p in purposes])
@@ -113,20 +125,46 @@ class RedshiftPolicyCompiler:
                                 f" OR CURRENT_SETTING('ces.purpose', true) IN ({purpose_list})"
                             )
 
-                        lines.append("-- Native Redshift Dynamic Data Masking (DDM)")
+                        lines.append("-- Native Redshift Dynamic Data Masking (DDM) (Compiled per User)")
                         lines.append(f"CREATE MASKING POLICY {mask_policy_name}")
                         lines.append("WITH (val VARCHAR)")
                         lines.append("USING (")
                         lines.append("  CASE")
-                        lines.append(
-                            f"    WHEN CURRENT_USER IN ('admin', 'awsuser') OR {role_checks_sql}{purpose_clause} THEN val"
-                        )
+                        lines.append("    WHEN CURRENT_USER IN ('admin', 'awsuser') THEN val")
+
+                        if member_users:
+                            for u in member_users:
+                                rs_uid = u.get("redshift_user") or u.get("username", "").lower()
+                                disp_name = u.get("display_name") or u.get("username")
+                                grp_code = u.get("role_code") or "MEMBER"
+                                lines.append(
+                                    f"    -- User Entitlement: {disp_name} ({u.get('username')}) [Group: {grp_code}]"
+                                )
+                                lines.append(
+                                    f"    WHEN CURRENT_USER = '{rs_uid}'{purpose_clause} THEN val"
+                                )
+                        else:
+                            role_checks = []
+                            for r in role_codes:
+                                role_checks.append(f"pg_has_role(CURRENT_USER, '{r}', 'MEMBER')")
+                            role_checks_sql = " OR ".join(role_checks) if role_checks else "FALSE"
+                            lines.append(
+                                f"    WHEN {role_checks_sql}{purpose_clause} THEN val"
+                            )
+
                         lines.append(f"    ELSE {mask_expr}")
                         lines.append("  END")
                         lines.append(");")
                         lines.append("")
 
-                        if role_codes:
+                        if member_users:
+                            lines.append("-- Attach Masking Policy separately to each member user in Redshift:")
+                            for u in member_users:
+                                rs_uid = u.get("redshift_user") or u.get("username", "").lower()
+                                lines.append(
+                                    f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO USER {rs_uid};"
+                                )
+                        elif role_codes:
                             for r in role_codes:
                                 lines.append(
                                     f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO ROLE {r};"
@@ -147,23 +185,38 @@ class RedshiftPolicyCompiler:
                     elif act_type == "FILTER_ROWS":
                         filter_col = (action.get("filter_column") or "region").lower()
                         filter_val = action.get("filter_value") or "US_EAST"
-                        rls_policy_name = f"rls_{table_name}_{filter_col}"
+                        base_rls_name = f"rls_{table_name}_{filter_col}"
 
-                        lines.append("-- Native Redshift Row-Level Security (RLS)")
-                        lines.append(f"CREATE RLS POLICY {rls_policy_name}")
-                        lines.append(f"WITH ({filter_col} VARCHAR)")
-                        lines.append(f"USING ({filter_col} = '{filter_val}');")
-                        lines.append("")
-
-                        if role_codes:
-                            for r in role_codes:
+                        if member_users:
+                            lines.append("-- Native Redshift Row-Level Security (RLS) (Compiled per User)")
+                            for u in member_users:
+                                rs_uid = u.get("redshift_user") or u.get("username", "").lower()
+                                disp_name = u.get("display_name") or u.get("username")
+                                user_rls_name = f"{base_rls_name}_{rs_uid}"
                                 lines.append(
-                                    f"ATTACH RLS POLICY {rls_policy_name} ON {full_table_path} TO ROLE {r};"
+                                    f"-- ─── RLS Policy for User: {disp_name} ({rs_uid}) ───"
+                                )
+                                lines.append(f"CREATE RLS POLICY {user_rls_name}")
+                                lines.append(f"WITH ({filter_col} VARCHAR)")
+                                lines.append(f"USING ({filter_col} = '{filter_val}');")
+                                lines.append(
+                                    f"ATTACH RLS POLICY {user_rls_name} ON {full_table_path} TO USER {rs_uid};"
                                 )
                         else:
-                            lines.append(
-                                f"ATTACH RLS POLICY {rls_policy_name} ON {full_table_path} TO PUBLIC;"
-                            )
+                            lines.append("-- Native Redshift Row-Level Security (RLS)")
+                            lines.append(f"CREATE RLS POLICY {base_rls_name}")
+                            lines.append(f"WITH ({filter_col} VARCHAR)")
+                            lines.append(f"USING ({filter_col} = '{filter_val}');")
+                            lines.append("")
+                            if role_codes:
+                                for r in role_codes:
+                                    lines.append(
+                                        f"ATTACH RLS POLICY {base_rls_name} ON {full_table_path} TO ROLE {r};"
+                                    )
+                            else:
+                                lines.append(
+                                    f"ATTACH RLS POLICY {base_rls_name} ON {full_table_path} TO PUBLIC;"
+                                )
 
                         lines.append(
                             "-- Enable Row-Level Security on Table (Required in Amazon Redshift)"
@@ -175,7 +228,7 @@ class RedshiftPolicyCompiler:
                         lines.append("")
                         lines.append("-- Verification: Inspect active Redshift RLS policy catalog")
                         lines.append(
-                            f"SELECT * FROM SVV_RLS_POLICY WHERE policy_name = '{rls_policy_name}';"
+                            f"SELECT * FROM SVV_RLS_POLICY WHERE policy_name LIKE '{base_rls_name}%';"
                         )
                         lines.append("")
 
@@ -185,11 +238,27 @@ class RedshiftPolicyCompiler:
                             if act_type == "GRANT_SELECT"
                             else "INSERT" if act_type == "GRANT_INSERT" else "UPDATE"
                         )
-                        for r in role_codes:
-                            lines.append(f"GRANT USAGE ON SCHEMA {schema_name} TO ROLE {r};")
-                            lines.append(
-                                f"GRANT {sql_verb} ON TABLE {full_table_path} TO ROLE {r};"
-                            )
-                        lines.append("")
+                        if member_users:
+                            for u in member_users:
+                                rs_uid = u.get("redshift_user") or u.get("username", "").lower()
+                                disp_name = u.get("display_name") or u.get("username")
+                                grp_code = u.get("role_code") or "MEMBER"
+                                lines.append(
+                                    f"-- ─── Privileges for User: {disp_name} ({u.get('username')}) | Redshift User: {rs_uid} [Group: {grp_code}] ───"
+                                )
+                                lines.append(f"GRANT USAGE ON SCHEMA {schema_name} TO USER {rs_uid};")
+                                lines.append(
+                                    f"GRANT {sql_verb} ON TABLE {full_table_path} TO USER {rs_uid};"
+                                )
+                                lines.append(f"-- Verification: Test query as user {rs_uid}")
+                                lines.append(f"-- SET SESSION AUTHORIZATION '{rs_uid}'; SELECT * FROM {full_table_path} LIMIT 10;")
+                                lines.append("")
+                        else:
+                            for r in role_codes:
+                                lines.append(f"GRANT USAGE ON SCHEMA {schema_name} TO ROLE {r};")
+                                lines.append(
+                                    f"GRANT {sql_verb} ON TABLE {full_table_path} TO ROLE {r};"
+                                )
+                            lines.append("")
 
         return "\n".join(lines)

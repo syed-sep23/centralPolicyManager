@@ -18,6 +18,9 @@ from tasks.metadata_tasks import _async_sync_metadata, sync_platform_metadata_cr
 router = APIRouter()
 
 
+import json
+
+
 class PlatformCreate(BaseModel):
     platform_code: str
     platform_name: str
@@ -34,6 +37,8 @@ class PlatformCreate(BaseModel):
     catalog_name: Optional[str] = None
     db_user: Optional[str] = None
     db_password: Optional[str] = None
+    assigned_user_id: Optional[int] = None
+    assigned_group_ids: Optional[list[int]] = []
     connection_status: Optional[str] = "UNTESTED"
     last_tested_at: Optional[datetime] = None
 
@@ -52,6 +57,8 @@ class PlatformUpdate(BaseModel):
     catalog_name: Optional[str] = None
     db_user: Optional[str] = None
     db_password: Optional[str] = None
+    assigned_user_id: Optional[int] = None
+    assigned_group_ids: Optional[list[int]] = None
     connection_status: Optional[str] = None
     last_tested_at: Optional[datetime] = None
 
@@ -67,6 +74,7 @@ class TestConnectionRequest(BaseModel):
     role: Optional[str] = None
     db_user: Optional[str] = None
     db_password: Optional[str] = None
+    assigned_user_id: Optional[int] = None
 
 
 @router.get("/platforms/drivers")
@@ -97,9 +105,13 @@ async def list_platforms(db: AsyncSession = Depends(get_db)):
                         p.*,
                         COALESCE(d.driver_code, p.driver_code, p.platform_code) AS driver_code,
                         d.driver_name,
-                        d.fields AS driver_fields
+                        d.fields AS driver_fields,
+                        u.username AS assigned_username,
+                        u.display_name AS assigned_user_display_name,
+                        u.email AS assigned_user_email
                     FROM metadata_platforms p
                     LEFT JOIN metadata_platform_drivers d ON COALESCE(p.driver_code, p.platform_code) = d.driver_code
+                    LEFT JOIN users u ON u.user_id = p.assigned_user_id
                     WHERE p.is_active = TRUE 
                     ORDER BY p.platform_code
                 """)
@@ -108,7 +120,52 @@ async def list_platforms(db: AsyncSession = Depends(get_db)):
         .mappings()
         .all()
     )
-    return [dict(r) for r in rows]
+    platforms_list = [dict(r) for r in rows]
+    if not platforms_list:
+        return []
+
+    p_ids = [p["platform_id"] for p in platforms_list]
+
+    # Fetch assigned groups from platform_role_mappings
+    prm_rows = (
+        (
+            await db.execute(
+                text("""
+                SELECT prm.platform_id, r.role_id, r.role_name, r.role_code
+                FROM platform_role_mappings prm
+                JOIN roles r ON r.role_id = prm.internal_role_id
+                WHERE prm.platform_id = ANY(:pids)
+            """),
+                {"pids": p_ids},
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    platform_groups: dict[int, list[dict]] = {pid: [] for pid in p_ids}
+    for prm in prm_rows:
+        platform_groups[prm["platform_id"]].append(
+            {
+                "role_id": prm["role_id"],
+                "role_name": prm["role_name"],
+                "role_code": prm["role_code"],
+            }
+        )
+
+    for p in platforms_list:
+        p["assigned_groups"] = platform_groups.get(p["platform_id"], [])
+        if p.get("assigned_user_id"):
+            p["assigned_user"] = {
+                "user_id": p["assigned_user_id"],
+                "username": p.get("assigned_username"),
+                "display_name": p.get("assigned_user_display_name"),
+                "email": p.get("assigned_user_email"),
+            }
+        else:
+            p["assigned_user"] = None
+
+    return platforms_list
 
 
 @router.get("/platforms/{platform_id}")
@@ -121,9 +178,13 @@ async def get_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
                         p.*,
                         COALESCE(d.driver_code, p.driver_code, p.platform_code) AS driver_code,
                         d.driver_name,
-                        d.fields AS driver_fields
+                        d.fields AS driver_fields,
+                        u.username AS assigned_username,
+                        u.display_name AS assigned_user_display_name,
+                        u.email AS assigned_user_email
                     FROM metadata_platforms p
                     LEFT JOIN metadata_platform_drivers d ON COALESCE(p.driver_code, p.platform_code) = d.driver_code
+                    LEFT JOIN users u ON u.user_id = p.assigned_user_id
                     WHERE p.platform_id = :p AND p.is_active = TRUE
                 """),
                 {"p": platform_id},
@@ -134,25 +195,75 @@ async def get_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
     )
     if not row:
         return {"error": "Platform not found", "platform_id": platform_id}
-    return dict(row)
+    res_dict = dict(row)
+
+    # Fetch groups
+    prm_rows = (
+        (
+            await db.execute(
+                text("""
+                SELECT prm.platform_id, r.role_id, r.role_name, r.role_code
+                FROM platform_role_mappings prm
+                JOIN roles r ON r.role_id = prm.internal_role_id
+                WHERE prm.platform_id = :pid
+            """),
+                {"pid": platform_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    res_dict["assigned_groups"] = [dict(m) for m in prm_rows]
+    if res_dict.get("assigned_user_id"):
+        res_dict["assigned_user"] = {
+            "user_id": res_dict["assigned_user_id"],
+            "username": res_dict.get("assigned_username"),
+            "display_name": res_dict.get("assigned_user_display_name"),
+            "email": res_dict.get("assigned_user_email"),
+        }
+    else:
+        res_dict["assigned_user"] = None
+
+    return res_dict
 
 
 @router.post("/platforms", status_code=201)
 async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_db)):
     alias = body.connection_alias or f"{body.platform_code.lower()}_conn"
     driver = body.driver_code or body.platform_code
+
+    # Resolve platform-specific external user ID if assigned_user_id is given
+    effective_db_user = body.db_user
+    if body.assigned_user_id:
+        ext_row = (
+            await db.execute(
+                text("""
+                SELECT external_user_id FROM platform_user_mappings
+                WHERE user_id = :u AND (platform_code = :c OR platform_code = :d)
+                LIMIT 1
+            """),
+                {"u": body.assigned_user_id, "c": body.platform_code.upper(), "d": (driver or "").upper()},
+            )
+        ).first()
+        if ext_row and ext_row[0]:
+            effective_db_user = ext_row[0]
+
+    assigned_grp_json = json.dumps(body.assigned_group_ids or [])
+
     res = await db.execute(
         text("""
             INSERT INTO metadata_platforms (
                 platform_code, platform_name, driver_code, platform_version, connection_alias,
                 account_identifier, warehouse, default_database, role_name,
                 host, port, http_path, catalog_name, db_user, db_password,
+                assigned_user_id, assigned_group_ids,
                 connection_status, last_tested_at, is_active
             )
             VALUES (
                 :c, :n, :driver_code, :v, :a,
                 :acc, :wh, :db, :role,
                 :host, :port, :http, :cat, :u, :pwd,
+                :assigned_uid, :assigned_gids::jsonb,
                 :conn_status, :tested_at, TRUE
             )
             ON CONFLICT (platform_code) DO UPDATE SET
@@ -169,6 +280,8 @@ async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_d
                 catalog_name = EXCLUDED.catalog_name,
                 db_user = EXCLUDED.db_user,
                 db_password = EXCLUDED.db_password,
+                assigned_user_id = EXCLUDED.assigned_user_id,
+                assigned_group_ids = EXCLUDED.assigned_group_ids,
                 connection_status = COALESCE(EXCLUDED.connection_status, metadata_platforms.connection_status),
                 last_tested_at = COALESCE(EXCLUDED.last_tested_at, metadata_platforms.last_tested_at),
                 is_active = TRUE
@@ -188,13 +301,31 @@ async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_d
             "port": body.port,
             "http": body.http_path,
             "cat": body.catalog_name,
-            "u": body.db_user,
+            "u": effective_db_user,
             "pwd": body.db_password,
+            "assigned_uid": body.assigned_user_id,
+            "assigned_gids": assigned_grp_json,
             "conn_status": body.connection_status or "UNTESTED",
             "tested_at": body.last_tested_at,
         },
     )
     row = res.mappings().first()
+    new_pid = row["platform_id"]
+
+    # Synchronize platform_role_mappings if groups selected
+    if body.assigned_group_ids:
+        for gid in body.assigned_group_ids:
+            role_row = (await db.execute(text("SELECT role_code FROM roles WHERE role_id = :r"), {"r": gid})).first()
+            p_role_name = role_row[0] if role_row else f"ROLE_{gid}"
+            await db.execute(
+                text("""
+                INSERT INTO platform_role_mappings (platform_id, internal_role_id, platform_role_name)
+                VALUES (:pid, :gid, :pname)
+                ON CONFLICT (platform_id, internal_role_id) DO NOTHING
+            """),
+                {"pid": new_pid, "gid": gid, "pname": p_role_name},
+            )
+
     await db.commit()
     return dict(row)
 
@@ -203,6 +334,27 @@ async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_d
 async def update_platform(
     platform_id: int, body: PlatformUpdate, db: AsyncSession = Depends(get_db)
 ):
+    # Resolve platform-specific external user ID if assigned_user_id is given
+    effective_db_user = body.db_user
+    if body.assigned_user_id:
+        p_row = (await db.execute(text("SELECT platform_code, driver_code FROM metadata_platforms WHERE platform_id = :p"), {"p": platform_id})).first()
+        pcode = (p_row[0] if p_row else "").upper()
+        dcode = (p_row[1] if p_row else "").upper()
+        ext_row = (
+            await db.execute(
+                text("""
+                SELECT external_user_id FROM platform_user_mappings
+                WHERE user_id = :u AND (platform_code = :c OR platform_code = :d)
+                LIMIT 1
+            """),
+                {"u": body.assigned_user_id, "c": pcode, "d": dcode},
+            )
+        ).first()
+        if ext_row and ext_row[0]:
+            effective_db_user = ext_row[0]
+
+    assigned_grp_json = json.dumps(body.assigned_group_ids) if body.assigned_group_ids is not None else None
+
     res = await db.execute(
         text("""
             UPDATE metadata_platforms
@@ -219,6 +371,8 @@ async def update_platform(
                 catalog_name = COALESCE(:cat, catalog_name),
                 db_user = COALESCE(:u, db_user),
                 db_password = COALESCE(:pwd, db_password),
+                assigned_user_id = CASE WHEN :has_user THEN :assigned_uid ELSE assigned_user_id END,
+                assigned_group_ids = CASE WHEN :has_gids THEN :assigned_gids::jsonb ELSE assigned_group_ids END,
                 connection_status = COALESCE(:conn_status, connection_status),
                 last_tested_at = COALESCE(:tested_at, last_tested_at)
             WHERE platform_id = :p AND is_active = TRUE
@@ -237,13 +391,36 @@ async def update_platform(
             "port": body.port,
             "http": body.http_path,
             "cat": body.catalog_name,
-            "u": body.db_user,
+            "u": effective_db_user,
             "pwd": body.db_password,
+            "has_user": body.assigned_user_id is not None,
+            "assigned_uid": body.assigned_user_id,
+            "has_gids": assigned_grp_json is not None,
+            "assigned_gids": assigned_grp_json or "[]",
             "conn_status": body.connection_status,
             "tested_at": body.last_tested_at,
         },
     )
     row = res.mappings().first()
+
+    if body.assigned_group_ids is not None:
+        # Reconcile platform_role_mappings
+        await db.execute(
+            text("DELETE FROM platform_role_mappings WHERE platform_id = :p AND NOT (internal_role_id = ANY(:gids))"),
+            {"p": platform_id, "gids": body.assigned_group_ids},
+        )
+        for gid in body.assigned_group_ids:
+            role_row = (await db.execute(text("SELECT role_code FROM roles WHERE role_id = :r"), {"r": gid})).first()
+            p_role_name = role_row[0] if role_row else f"ROLE_{gid}"
+            await db.execute(
+                text("""
+                INSERT INTO platform_role_mappings (platform_id, internal_role_id, platform_role_name)
+                VALUES (:pid, :gid, :pname)
+                ON CONFLICT (platform_id, internal_role_id) DO NOTHING
+            """),
+                {"pid": platform_id, "gid": gid, "pname": p_role_name},
+            )
+
     await db.commit()
     if not row:
         return {"error": "Platform not found", "platform_id": platform_id}
@@ -251,9 +428,51 @@ async def update_platform(
 
 
 @router.post("/platforms/test-connection")
-async def test_platform_connection(body: TestConnectionRequest):
-    """Dispatches live connection test to the respective connector service and returns real results."""
+async def test_platform_connection(
+    body: TestConnectionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Dispatches live connection test to the respective connector service.
+    CRITICAL: Resolves and passes the respective platform-specific external user ID
+    rather than the internal CES username itself.
+    """
     p_type = (body.platform_type or body.platform_code or "").upper()
+    driver_type = p_type.split("_")[0]
+
+    # Resolve platform-specific external userid if assigned_user_id is provided or if db_user matches a user
+    effective_db_user = body.db_user
+    if body.assigned_user_id:
+        ext_row = (
+            await db.execute(
+                text("""
+                SELECT external_user_id FROM platform_user_mappings
+                WHERE user_id = :u AND (UPPER(platform_code) = :p OR UPPER(platform_code) = :d)
+                LIMIT 1
+            """),
+                {"u": body.assigned_user_id, "p": p_type, "d": driver_type},
+            )
+        ).first()
+        if ext_row and ext_row[0]:
+            effective_db_user = ext_row[0]
+    elif body.db_user:
+        # Check if db_user is a CES username/email, in which case resolve their external mapping
+        ext_by_user = (
+            await db.execute(
+                text("""
+                SELECT pum.external_user_id
+                FROM platform_user_mappings pum
+                JOIN users u ON u.user_id = pum.user_id
+                WHERE (LOWER(u.username) = :u OR LOWER(u.email) = :u)
+                  AND (UPPER(pum.platform_code) = :p OR UPPER(pum.platform_code) = :d)
+                LIMIT 1
+            """),
+                {"u": body.db_user.strip().lower(), "p": p_type, "d": driver_type},
+            )
+        ).first()
+        if ext_by_user and ext_by_user[0]:
+            effective_db_user = ext_by_user[0]
+
     if "SNOWFLAKE" in p_type:
         connector_url = settings.SNOWFLAKE_CONNECTOR_URL
         payload = {
@@ -261,7 +480,7 @@ async def test_platform_connection(body: TestConnectionRequest):
             "warehouse": body.warehouse,
             "default_database": body.default_database,
             "role": body.role,
-            "db_user": body.db_user,
+            "db_user": effective_db_user,
             "db_password": body.db_password,
         }
     elif "REDSHIFT" in p_type:
@@ -270,13 +489,13 @@ async def test_platform_connection(body: TestConnectionRequest):
             "host": body.host,
             "port": body.port or 5439,
             "default_database": body.default_database,
-            "db_user": body.db_user,
+            "db_user": effective_db_user,
             "db_password": body.db_password,
         }
     else:
         return {
             "status": "SUCCESS",
-            "message": f"Native driver syntax validated for {p_type}. Host: [{body.host}], User: [{body.db_user}].",
+            "message": f"Native driver syntax validated for {p_type}. Host: [{body.host}], Resolved External User: [{effective_db_user}].",
             "latency_ms": 12,
         }
 

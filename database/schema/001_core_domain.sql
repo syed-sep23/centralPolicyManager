@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS users (
     job_title           VARCHAR(255),
     cost_center         VARCHAR(100),
     office_location     VARCHAR(255),
+    country             VARCHAR(100),
     is_active           BOOLEAN NOT NULL DEFAULT TRUE,
     last_synced_at      TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),

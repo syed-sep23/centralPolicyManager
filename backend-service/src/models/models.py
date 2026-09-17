@@ -77,8 +77,16 @@ class User(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(255))
     department: Mapped[Optional[str]] = mapped_column(String(255))
     job_title: Mapped[Optional[str]] = mapped_column(String(255))
+    ldap_dn: Mapped[Optional[str]] = mapped_column(String(500))
+    cost_center: Mapped[Optional[str]] = mapped_column(String(100))
+    office_location: Mapped[Optional[str]] = mapped_column(String(255))
+    country: Mapped[Optional[str]] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     role_mappings: Mapped[list[UserRoleMapping]] = relationship(
         "UserRoleMapping", back_populates="user"
@@ -293,10 +301,27 @@ class MetadataPlatform(Base):
     catalog_name: Mapped[Optional[str]] = mapped_column(String(100))
     db_user: Mapped[Optional[str]] = mapped_column(String(100))
     db_password: Mapped[Optional[str]] = mapped_column(String(255))
+    assigned_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.user_id"))
+    assigned_group_ids: Mapped[list] = mapped_column(JSONB, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     connection_status: Mapped[str] = mapped_column(String(30), default="UNTESTED")
     last_tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     driver: Mapped[Optional[MetadataPlatformDriver]] = relationship("MetadataPlatformDriver", back_populates="platforms")
+
+
+# ─── Platform User Mapping (External User Mapping) ────────────────────────────
+class PlatformUserMapping(Base):
+    __tablename__ = "platform_user_mappings"
+
+    mapping_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    platform_id: Mapped[Optional[int]] = mapped_column(ForeignKey("metadata_platforms.platform_id"))
+    platform_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 

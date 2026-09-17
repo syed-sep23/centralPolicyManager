@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS metadata_platforms (
     catalog_name        VARCHAR(100),
     db_user             VARCHAR(100),
     db_password         VARCHAR(255),
+    assigned_user_id    INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    assigned_group_ids  JSONB NOT NULL DEFAULT '[]'::jsonb,
     is_active           BOOLEAN NOT NULL DEFAULT TRUE,
     connection_status   VARCHAR(30) NOT NULL DEFAULT 'UNTESTED'
                         CHECK (connection_status IN ('CONNECTED', 'FAILED', 'UNTESTED')),
@@ -152,6 +154,18 @@ CREATE TABLE IF NOT EXISTS platform_role_mappings (
     UNIQUE(platform_id, internal_role_id)
 );
 
+-- ─── Platform User Mappings (External user Mapping per platform) ──────────────
+CREATE TABLE IF NOT EXISTS platform_user_mappings (
+    mapping_id          SERIAL PRIMARY KEY,
+    user_id             INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    platform_id         INTEGER REFERENCES metadata_platforms(platform_id) ON DELETE SET NULL,
+    platform_code       VARCHAR(50) NOT NULL,
+    external_user_id    VARCHAR(255) NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, platform_code)
+);
+
 -- ─── Indexes ──────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_meta_platform_driver ON metadata_platforms(driver_code);
 CREATE INDEX IF NOT EXISTS idx_meta_db_platform     ON metadata_databases(platform_id);
@@ -160,6 +174,8 @@ CREATE INDEX IF NOT EXISTS idx_meta_table_schema    ON metadata_tables(schema_id
 CREATE INDEX IF NOT EXISTS idx_meta_col_table       ON metadata_columns(table_id);
 CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_col  ON metadata_tag_assignments(column_id);
 CREATE INDEX IF NOT EXISTS idx_meta_tag_assign_tbl  ON metadata_tag_assignments(table_id);
+CREATE INDEX IF NOT EXISTS idx_pum_user_id           ON platform_user_mappings(user_id);
+CREATE INDEX IF NOT EXISTS idx_pum_platform_code     ON platform_user_mappings(platform_code);
 
 -- ─── Automated Tag Discovery Identifiers & Rules ──────────────────────────────
 CREATE TABLE IF NOT EXISTS metadata_tag_rules (

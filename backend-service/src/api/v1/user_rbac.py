@@ -26,14 +26,33 @@ class GroupBrief(BaseModel):
     role_code: str
 
 
+class ExternalMappingItem(BaseModel):
+    platform_code: str
+    external_user_id: str
+    platform_id: Optional[int] = None
+
+
 class UserCreate(BaseModel):
     username: str
     email: str
     display_name: Optional[str] = None
     department: Optional[str] = "Engineering"
     job_title: Optional[str] = "Data Practitioner"
+    country: Optional[str] = None
     group_ids: Optional[list[int]] = []
     attributes: Optional[dict[str, str]] = {}
+    external_mappings: Optional[list[ExternalMappingItem]] = []
+
+
+class UserUpdate(BaseModel):
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    department: Optional[str] = None
+    job_title: Optional[str] = None
+    country: Optional[str] = None
+    is_active: Optional[bool] = None
+    group_ids: Optional[list[int]] = None
+    external_mappings: Optional[list[ExternalMappingItem]] = None
 
 
 class UserRoleMappingCreate(BaseModel):
@@ -58,6 +77,47 @@ class AttributeUpsert(BaseModel):
 # ─── Users & Effective Attributes ─────────────────────────────────────────────
 
 
+@router.get("/users/supported-platforms")
+async def get_supported_platforms(
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all supported cloud data platforms and registered drivers for external user mapping."""
+    drivers_rows = (
+        (
+            await db.execute(
+                text("""
+                SELECT driver_code, driver_name, description
+                FROM metadata_platform_drivers
+                WHERE is_active = TRUE
+                ORDER BY driver_name
+            """)
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    platforms_rows = (
+        (
+            await db.execute(
+                text("""
+                SELECT platform_id, platform_code, platform_name, driver_code, connection_alias
+                FROM metadata_platforms
+                WHERE is_active = TRUE
+                ORDER BY platform_name
+            """)
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    return {
+        "drivers": [dict(r) for r in drivers_rows],
+        "platforms": [dict(r) for r in platforms_rows],
+    }
+
+
 @router.get("/users")
 async def list_users(
     page: int = Query(1, ge=1),
@@ -65,15 +125,16 @@ async def list_users(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List users along with their real database-backed group memberships and direct attributes."""
+    """List users along with group memberships, attributes, and external platform user mappings."""
     offset = (page - 1) * size
     user_rows = (
         (
             await db.execute(
                 text("""
-            SELECT user_id, username, email, display_name, department, job_title, is_active
+            SELECT user_id, username, email, display_name, department, job_title,
+                   country, ldap_dn, cost_center, office_location, is_active,
+                   last_synced_at, created_at, updated_at
             FROM users
-            WHERE is_active = TRUE
             ORDER BY user_id
             LIMIT :l OFFSET :o
         """),
@@ -143,10 +204,41 @@ async def list_users(
             }
         )
 
+    # Fetch external platform mappings for these users
+    ext_rows = (
+        (
+            await db.execute(
+                text("""
+            SELECT pum.user_id, pum.platform_code, pum.external_user_id, pum.platform_id,
+                   COALESCE(mp.platform_name, pum.platform_code) AS platform_name
+            FROM platform_user_mappings pum
+            LEFT JOIN metadata_platforms mp ON mp.platform_id = pum.platform_id
+            WHERE pum.user_id = ANY(:ids)
+            ORDER BY pum.platform_code
+        """),
+                {"ids": u_ids},
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    user_ext_maps: dict[int, list[dict]] = {uid: [] for uid in u_ids}
+    for em in ext_rows:
+        user_ext_maps[em["user_id"]].append(
+            {
+                "platform_code": em["platform_code"],
+                "external_user_id": em["external_user_id"],
+                "platform_id": em["platform_id"],
+                "platform_name": em["platform_name"],
+            }
+        )
+
     # Attach to user dict
     for u in users:
         u["groups"] = user_groups.get(u["user_id"], [])
         u["direct_attributes"] = user_attrs.get(u["user_id"], [])
+        u["external_mappings"] = user_ext_maps.get(u["user_id"], [])
 
     return users
 
@@ -160,9 +252,13 @@ async def get_user(
     row = (
         (
             await db.execute(
-                text(
-                    "SELECT user_id, username, email, display_name, department, job_title, is_active FROM users WHERE user_id=:u"
-                ),
+                text("""
+                SELECT user_id, username, email, display_name, department, job_title,
+                       country, ldap_dn, cost_center, office_location, is_active,
+                       last_synced_at, created_at, updated_at
+                FROM users
+                WHERE user_id = :u
+            """),
                 {"u": user_id},
             )
         )
@@ -171,7 +267,231 @@ async def get_user(
     )
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    return dict(row)
+    user_dict = dict(row)
+
+    # Groups
+    mapping_rows = (
+        (
+            await db.execute(
+                text("""
+            SELECT r.role_id, r.role_name, r.role_code
+            FROM user_role_mappings urm
+            JOIN roles r ON r.role_id = urm.role_id
+            WHERE urm.user_id = :u AND urm.is_active = TRUE
+        """),
+                {"u": user_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    user_dict["groups"] = [dict(m) for m in mapping_rows]
+
+    # External mappings
+    ext_rows = (
+        (
+            await db.execute(
+                text("""
+            SELECT pum.platform_code, pum.external_user_id, pum.platform_id,
+                   COALESCE(mp.platform_name, pum.platform_code) AS platform_name
+            FROM platform_user_mappings pum
+            LEFT JOIN metadata_platforms mp ON mp.platform_id = pum.platform_id
+            WHERE pum.user_id = :u
+            ORDER BY pum.platform_code
+        """),
+                {"u": user_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    user_dict["external_mappings"] = [dict(e) for e in ext_rows]
+
+    return user_dict
+
+
+@router.put("/users/{user_id}")
+async def update_user(
+    user_id: int,
+    body: UserUpdate,
+    current_user: CurrentUser = Depends(require_roles("POLICY_ADMIN", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update user identity attributes (name, email, country, position, is_active),
+    group memberships, and External User Mappings for supported data platforms.
+    """
+    existing = (
+        await db.execute(text("SELECT user_id FROM users WHERE user_id = :u"), {"u": user_id})
+    ).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 1. Update basic profile fields
+    await db.execute(
+        text("""
+            UPDATE users
+            SET display_name = COALESCE(:display_name, display_name),
+                email        = COALESCE(:email, email),
+                department   = COALESCE(:department, department),
+                job_title    = COALESCE(:job_title, job_title),
+                country      = COALESCE(:country, country),
+                is_active    = COALESCE(:is_active, is_active),
+                updated_at   = NOW()
+            WHERE user_id = :u
+        """),
+        {
+            "u": user_id,
+            "display_name": body.display_name,
+            "email": body.email.strip().lower() if body.email else None,
+            "department": body.department,
+            "job_title": body.job_title,
+            "country": body.country,
+            "is_active": body.is_active,
+        },
+    )
+
+    # 2. Also keep country synced in user_attributes if provided
+    if body.country:
+        await db.execute(
+            text("""
+                INSERT INTO user_attributes (user_id, attribute_key, attribute_value, attribute_source)
+                VALUES (:u, 'country', :c, 'MANUAL')
+                ON CONFLICT (user_id, attribute_key) DO UPDATE SET attribute_value = EXCLUDED.attribute_value, updated_at = NOW()
+            """),
+            {"u": user_id, "c": body.country},
+        )
+
+    # 3. Synchronize group memberships if provided
+    if body.group_ids is not None:
+        # Deactivate groups not in list
+        await db.execute(
+            text("""
+                UPDATE user_role_mappings
+                SET is_active = FALSE
+                WHERE user_id = :u AND NOT (role_id = ANY(:gids))
+            """),
+            {"u": user_id, "gids": body.group_ids},
+        )
+        # Activate / insert groups in list
+        for gid in body.group_ids:
+            await db.execute(
+                text("""
+                    INSERT INTO user_role_mappings (user_id, role_id, is_active)
+                    VALUES (:u, :r, TRUE)
+                    ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = TRUE
+                """),
+                {"u": user_id, "r": gid},
+            )
+
+    # 4. Synchronize External User Mappings across supported platforms
+    if body.external_mappings is not None:
+        for em in body.external_mappings:
+            pcode = em.platform_code.strip().upper()
+            ext_uid = em.external_user_id.strip()
+
+            if ext_uid:
+                # Find platform_id if available
+                pid = em.platform_id
+                if not pid:
+                    pid_row = (
+                        await db.execute(
+                            text("SELECT platform_id FROM metadata_platforms WHERE UPPER(platform_code) = :c LIMIT 1"),
+                            {"c": pcode},
+                        )
+                    ).first()
+                    pid = pid_row[0] if pid_row else None
+
+                await db.execute(
+                    text("""
+                        INSERT INTO platform_user_mappings (user_id, platform_id, platform_code, external_user_id, updated_at)
+                        VALUES (:u, :pid, :pcode, :ext_uid, NOW())
+                        ON CONFLICT (user_id, platform_code) DO UPDATE
+                        SET external_user_id = EXCLUDED.external_user_id,
+                            platform_id = COALESCE(EXCLUDED.platform_id, platform_user_mappings.platform_id),
+                            updated_at = NOW()
+                    """),
+                    {"u": user_id, "pid": pid, "pcode": pcode, "ext_uid": ext_uid},
+                )
+            else:
+                # If external_user_id is blank, delete mapping
+                await db.execute(
+                    text("DELETE FROM platform_user_mappings WHERE user_id = :u AND platform_code = :pcode"),
+                    {"u": user_id, "pcode": pcode},
+                )
+
+    await db.commit()
+
+    # Return updated user object
+    return await get_user(user_id=user_id, current_user=current_user, db=db)
+
+
+@router.get("/users/{user_id}/external-mappings")
+async def get_user_external_mappings(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve all external platform user mappings for a given user."""
+    rows = (
+        (
+            await db.execute(
+                text("""
+            SELECT pum.platform_code, pum.external_user_id, pum.platform_id,
+                   COALESCE(mp.platform_name, pum.platform_code) AS platform_name
+            FROM platform_user_mappings pum
+            LEFT JOIN metadata_platforms mp ON mp.platform_id = pum.platform_id
+            WHERE pum.user_id = :u
+            ORDER BY pum.platform_code
+        """),
+                {"u": user_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(r) for r in rows]
+
+
+@router.put("/users/{user_id}/external-mappings")
+async def update_user_external_mappings(
+    user_id: int,
+    mappings: list[ExternalMappingItem],
+    current_user: CurrentUser = Depends(require_roles("POLICY_ADMIN", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upsert or update external user mappings for a given user."""
+    for em in mappings:
+        pcode = em.platform_code.strip().upper()
+        ext_uid = em.external_user_id.strip()
+        if ext_uid:
+            pid = em.platform_id
+            if not pid:
+                pid_row = (
+                    await db.execute(
+                        text("SELECT platform_id FROM metadata_platforms WHERE UPPER(platform_code) = :c LIMIT 1"),
+                        {"c": pcode},
+                    )
+                ).first()
+                pid = pid_row[0] if pid_row else None
+
+            await db.execute(
+                text("""
+                    INSERT INTO platform_user_mappings (user_id, platform_id, platform_code, external_user_id, updated_at)
+                    VALUES (:u, :pid, :pcode, :ext_uid, NOW())
+                    ON CONFLICT (user_id, platform_code) DO UPDATE
+                    SET external_user_id = EXCLUDED.external_user_id,
+                        platform_id = COALESCE(EXCLUDED.platform_id, platform_user_mappings.platform_id),
+                        updated_at = NOW()
+                """),
+                {"u": user_id, "pid": pid, "pcode": pcode, "ext_uid": ext_uid},
+            )
+        else:
+            await db.execute(
+                text("DELETE FROM platform_user_mappings WHERE user_id = :u AND platform_code = :pcode"),
+                {"u": user_id, "pcode": pcode},
+            )
+    await db.commit()
+    return {"status": "saved"}
 
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)

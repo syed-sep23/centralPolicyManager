@@ -98,34 +98,35 @@ export const metadataApi = {
   createPlatform:   (data: any) => api.post('/metadata/platforms', data),
   updatePlatform:   (id: number, data: any) => api.put(`/metadata/platforms/${id}`, data),
   testConnectionDirect: async (data: any) => {
-    const type = (data.platform_type || data.platform_code || '').toUpperCase()
-    if (type.includes('SNOWFLAKE')) {
-      const payload = {
-        account_identifier: data.account_identifier,
-        warehouse: data.warehouse,
-        default_database: data.default_database,
-        role: data.role,
-        db_user: data.db_user,
-        db_password: data.db_password,
-      }
-      const res = await axios.post('/connectors/snowflake/api/v1/test-connection', payload, { timeout: 25_000 })
+    try {
+      const res = await api.post('/metadata/platforms/test-connection', data)
       return res.data
-    } else if (type.includes('REDSHIFT')) {
-      const payload = {
-        host: data.host,
-        port: data.port ? Number(data.port) : 5439,
-        default_database: data.default_database,
-        db_user: data.db_user,
-        db_password: data.db_password,
+    } catch (err: any) {
+      // Fallback to direct connector if edge gateway proxy fails
+      const type = (data.platform_type || data.platform_code || '').toUpperCase()
+      if (type.includes('SNOWFLAKE')) {
+        const payload = {
+          account_identifier: data.account_identifier,
+          warehouse: data.warehouse,
+          default_database: data.default_database,
+          role: data.role,
+          db_user: data.db_user,
+          db_password: data.db_password,
+        }
+        const res = await axios.post('/connectors/snowflake/api/v1/test-connection', payload, { timeout: 25_000 })
+        return res.data
+      } else if (type.includes('REDSHIFT')) {
+        const payload = {
+          host: data.host,
+          port: data.port ? Number(data.port) : 5439,
+          default_database: data.default_database,
+          db_user: data.db_user,
+          db_password: data.db_password,
+        }
+        const res = await axios.post('/connectors/redshift/api/v1/test-connection', payload, { timeout: 25_000 })
+        return res.data
       }
-      const res = await axios.post('/connectors/redshift/api/v1/test-connection', payload, { timeout: 25_000 })
-      return res.data
-    } else {
-      return {
-        status: 'SUCCESS',
-        message: `Driver configuration verified directly for ${type}`,
-        latency_ms: 10,
-      }
+      throw err
     }
   },
   testConnection:   (data: any) => metadataApi.testConnectionDirect(data),
@@ -157,11 +158,15 @@ export const rbacApi = {
   users:       (page = 1, size = 50) => api.get('/users', { params: { page, size } }),
   user:        (id: number) => api.get(`/users/${id}`),
   createUser:  (data: unknown) => api.post('/users', data),
+  updateUser:  (id: number, data: unknown) => api.put(`/users/${id}`, data),
   userRoles:   (id: number) => api.get(`/users/${id}/roles`),
   userAttrs:   (id: number) => api.get(`/users/${id}/attributes`),
   effectiveAttrs: (id: number) => api.get(`/users/${id}/effective-attributes`),
   upsertAttr:  (id: number, data: unknown) => api.put(`/users/${id}/attributes`, data),
   deleteAttr:  (id: number, key: string) => api.delete(`/users/${id}/attributes/${key}`),
+  externalMappings: (id: number) => api.get(`/users/${id}/external-mappings`),
+  updateExternalMappings: (id: number, mappings: unknown[]) => api.put(`/users/${id}/external-mappings`, mappings),
+  supportedPlatforms: () => api.get('/users/supported-platforms'),
   roles:       () => api.get('/roles'),
   createRole:  (data: unknown) => api.post('/roles', data),
   roleAttrs:   (id: number) => api.get(`/roles/${id}/attributes`),

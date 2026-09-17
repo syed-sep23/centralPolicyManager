@@ -11,7 +11,7 @@ import { notifications } from '@mantine/notifications'
 import {
   IconRocket, IconHistory, IconShieldCheck, IconAlertCircle, IconArrowLeft,
   IconEdit, IconCheck, IconX, IconChevronDown, IconChevronUp, IconCopy,
-  IconTerminal2, IconDatabase, IconServer,
+  IconTerminal2, IconDatabase, IconServer, IconUserCheck,
 } from '@tabler/icons-react'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -1030,6 +1030,43 @@ export default function PolicyDetailPage() {
                     Version v{compiledData.data.raw_payload?.version_number ?? 1}.0
                   </Badge>
                 </Group>
+
+                {compiledData.data.raw_payload?.target_users?.length > 0 && (
+                  <Paper withBorder p="sm" radius="md" mb="md" style={{ backgroundColor: 'rgba(99, 102, 241, 0.05)', borderColor: 'rgba(99, 102, 241, 0.2)' }}>
+                    <Group justify="space-between" mb="xs">
+                      <Group gap="xs">
+                        <IconUserCheck size={16} color="var(--mantine-color-indigo-4)" />
+                        <Text size="xs" fw={700} tt="uppercase" c="indigo">
+                          Target Users in Scope ({compiledData.data.raw_payload.target_users.length} User{compiledData.data.raw_payload.target_users.length > 1 ? 's' : ''} Expanded from Groups)
+                        </Text>
+                      </Group>
+                      <Badge size="xs" color="indigo" variant="light">Compiled Per User</Badge>
+                    </Group>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      Policies are compiled separately for each user in the targeted groups using platform-specific external user IDs:
+                    </Text>
+                    <Group gap="xs">
+                      {compiledData.data.raw_payload.target_users.map((u: any) => (
+                        <Badge
+                          key={u.user_id}
+                          size="md"
+                          variant="light"
+                          color="indigo"
+                          radius="md"
+                          style={{ textTransform: 'none', height: 'auto', padding: '6px 10px' }}
+                        >
+                          <Group gap="xs">
+                            <Text size="xs" fw={600}>{u.display_name || u.username}</Text>
+                            {u.role_code && <Badge size="xs" color="gray" variant="filled">{u.role_code}</Badge>}
+                            <Badge size="xs" color="blue" variant="dot">SF: {u.snowflake_user}</Badge>
+                            <Badge size="xs" color="red" variant="dot">RS: {u.redshift_user}</Badge>
+                          </Group>
+                        </Badge>
+                      ))}
+                    </Group>
+                  </Paper>
+                )}
+
                 <Tabs defaultValue="snowflake" color="indigo">
                   <Tabs.List mb="sm">
                     <Tabs.Tab value="snowflake" leftSection={<Code color="indigo" size="xs">SF</Code>}>
@@ -1047,28 +1084,28 @@ export default function PolicyDetailPage() {
                   </Tabs.List>
                   <Tabs.Panel value="snowflake">
                     <Box style={{ position: 'relative' }}>
-                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block style={{ backgroundColor: 'var(--ces-surface-code)', maxHeight: 380, overflow: 'auto' }}>
                         {compiledData.data.snowflake_sql}
                       </Code>
                     </Box>
                   </Tabs.Panel>
                   <Tabs.Panel value="redshift">
                     <Box style={{ position: 'relative' }}>
-                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block style={{ backgroundColor: 'var(--ces-surface-code)', maxHeight: 380, overflow: 'auto' }}>
                         {compiledData.data.redshift_sql}
                       </Code>
                     </Box>
                   </Tabs.Panel>
                   <Tabs.Panel value="opa">
                     <Box style={{ position: 'relative' }}>
-                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block style={{ backgroundColor: 'var(--ces-surface-code)', maxHeight: 380, overflow: 'auto' }}>
                         {compiledData.data.opa_rego || '# No OPA Rego generated for this version'}
                       </Code>
                     </Box>
                   </Tabs.Panel>
                   <Tabs.Panel value="raw_json">
                     <Box style={{ position: 'relative' }}>
-                      <Code block block style={{ backgroundColor: 'var(--ces-surface-code)' }} style={{ maxHeight: 380, overflow: 'auto' }}>
+                      <Code block style={{ backgroundColor: 'var(--ces-surface-code)', maxHeight: 380, overflow: 'auto' }}>
                         {JSON.stringify(compiledData.data.raw_payload, null, 2)}
                       </Code>
                     </Box>

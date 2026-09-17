@@ -377,34 +377,39 @@ ON CONFLICT (mapping_id) DO NOTHING;
 INSERT INTO policies (policy_id, organization_id, policy_name, policy_code, description, enforce_mode, status, owner_user_id, domain_id, product_id) VALUES
 (1, 1, 'Customer PII Data Masking & RLS', 'CUSTOMER_PII_PROTECT', 'Governance policy restricting access to customer PII and masking sensitive email/phone columns', 'ENFORCED', 'ENFORCED', 1, 3, 5),
 (2, 1, 'Financial & Revenue Row Access Policy', 'POL_FIN_002',      'Restricts GL transactions and revenue summary tables by region and analyst role',         'ENFORCED', 'ENFORCED', 2, 1, 1),
-(3, 1, 'SOX Financial Audit Oversight',        'SOX_AUDIT_003',     'Global SOX 404 compliance policy enforcing restricted GL and payroll access.',          'ENFORCED', 'ENFORCED', 1, 5, 8)
+(3, 1, 'SOX Financial Audit Oversight',        'SOX_AUDIT_003',     'Global SOX 404 compliance policy enforcing restricted GL and payroll access.',          'ENFORCED', 'ENFORCED', 1, 5, 8),
+(4, 1, 'test',                                  'TEST',              'Subscription access test policy',                                                        'ENFORCED', 'ENFORCED', 1, 1, 1)
 ON CONFLICT (policy_id) DO NOTHING;
 
 INSERT INTO policy_versions (version_id, policy_id, version_number, version_label, is_current, authored_by_user_id, status, change_summary) VALUES
 (1, 1, 1, 'v1.0 Baseline PII Masking',  TRUE, 1, 'DEPLOYED', 'Initial baseline PII masking & access policy'),
 (2, 2, 1, 'v1.0 Financial Governance',  TRUE, 2, 'DEPLOYED', 'Initial financial governance and row access control'),
-(3, 3, 1, 'v1.0 SOX Controls',          TRUE, 1, 'DEPLOYED', 'SOX 404 audit logging and restricted financial queries')
+(3, 3, 1, 'v1.0 SOX Controls',          TRUE, 1, 'DEPLOYED', 'SOX 404 audit logging and restricted financial queries'),
+(4, 4, 1, 'v1.0',                       TRUE, 1, 'DEPLOYED', 'Subscription access test policy')
 ON CONFLICT (version_id) DO NOTHING;
 
 INSERT INTO policy_rules (rule_id, version_id, rule_name, rule_description, rule_order, rule_type, effect, is_active) VALUES
 (1, 1, 'Mask Email for Analysts',      'Masks EMAIL column via SHA256 for non-admin analysts unless Fraud purpose', 1, 'COMBINED', 'ALLOW', TRUE),
 (2, 1, 'Filter Customers by Region',   'Restricts customer profiles to US_EAST region for analysts',               2, 'COMBINED', 'ALLOW', TRUE),
 (3, 2, 'US East Revenue Access',       'Restricts revenue summary access to US East region',                       1, 'ABAC',     'ALLOW', TRUE),
-(4, 3, 'SOX Auditor Audit Access',     'Allows SOX auditors with REGULATORY_AUDIT purpose to query GL data',       1, 'COMBINED', 'ALLOW', TRUE)
+(4, 3, 'SOX Auditor Audit Access',     'Allows SOX auditors with REGULATORY_AUDIT purpose to query GL data',       1, 'COMBINED', 'ALLOW', TRUE),
+(5, 4, 'SUBSCRIPTION_ACCESS Global Rule','Allow select on Redshift for Data Engineer',                            0, 'COMBINED', 'ALLOW', TRUE)
 ON CONFLICT (rule_id) DO NOTHING;
 
 INSERT INTO policy_rule_subjects (subject_id, rule_id, subject_type, role_id) VALUES
 (1, 1, 'ROLE', 9),  -- ROLE_ANALYST
 (2, 2, 'ROLE', 9),  -- ROLE_ANALYST
 (3, 3, 'ROLE', 6),  -- FINANCE_ANALYST
-(4, 4, 'ROLE', 11)  -- ROLE_COMPLIANCE
+(4, 4, 'ROLE', 11), -- ROLE_COMPLIANCE
+(5, 5, 'ROLE', 3)   -- DATA_ENGINEER
 ON CONFLICT (subject_id) DO NOTHING;
 
 INSERT INTO policy_rule_actions (action_id, rule_id, action_type, mask_type, filter_column, filter_value) VALUES
 (1, 1, 'MASK_COLUMN', 'HASH_SHA256', 'EMAIL',  NULL),
 (2, 2, 'FILTER_ROWS', NULL,          'REGION', 'US_EAST'),
 (3, 3, 'FILTER_ROWS', NULL,          'REGION', 'US_EAST'),
-(4, 4, 'GRANT_SELECT',NULL,          NULL,     NULL)
+(4, 4, 'GRANT_SELECT',NULL,          NULL,     NULL),
+(5, 5, 'GRANT_SELECT',NULL,          NULL,     NULL)
 ON CONFLICT (action_id) DO NOTHING;
 
 INSERT INTO policy_rule_conditions (condition_id, rule_id, condition_group, attribute_type, attribute_key, operator, compare_value_type, compare_value) VALUES
@@ -416,7 +421,8 @@ INSERT INTO policy_rule_resources (resource_id, rule_id, platform_id, database_i
 (1, 1, 1, 1, 1, 1,  'TAG'),    -- Global Tag-scoped: Discovered.PII.Email
 (2, 2, 1, 1, 1, 1,  'TABLE'),  -- Snowflake CUSTOMER_PROFILES
 (3, 3, 2, 3, 4, 10, 'TABLE'),  -- Redshift revenue_summary
-(4, 4, 1, 1, 1, 5,  'TABLE')   -- Snowflake GL_TRANSACTIONS
+(4, 4, 1, 1, 1, 5,  'TABLE'),  -- Snowflake GL_TRANSACTIONS
+(5, 5, 2, 3, 4, 10, 'TABLE')   -- Redshift revenue_summary
 ON CONFLICT (resource_id) DO NOTHING;
 
 INSERT INTO policy_rule_resource_tags (id, resource_id, tag_id, tag_value) VALUES
@@ -429,7 +435,8 @@ INSERT INTO policy_version_targets (version_id, platform_id, deployment_status, 
 (2, 1, 'SUCCESS', 'celery-dep-sf-002', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
 (2, 2, 'SUCCESS', 'celery-dep-rs-002', 'Successfully deployed native DDL to REDSHIFT',  NOW()),
 (3, 1, 'SUCCESS', 'celery-dep-sf-003', 'Successfully deployed native DDL to SNOWFLAKE', NOW()),
-(3, 2, 'SUCCESS', 'celery-dep-rs-003', 'Successfully deployed native DDL to REDSHIFT',  NOW())
+(3, 2, 'SUCCESS', 'celery-dep-rs-003', 'Successfully deployed native DDL to REDSHIFT',  NOW()),
+(4, 2, 'SUCCESS', 'celery-dep-rs-004', 'Successfully deployed native DDL to REDSHIFT',  NOW())
 ON CONFLICT (version_id, platform_id) DO NOTHING;
 
 -- ─── Celery Beat Scheduled Cron History Seed Data ─────────────────────────────
@@ -447,6 +454,7 @@ ON CONFLICT (id) DO NOTHING;
 UPDATE policies SET current_version_id = 1 WHERE policy_id = 1 AND current_version_id IS NULL;
 UPDATE policies SET current_version_id = 2 WHERE policy_id = 2 AND current_version_id IS NULL;
 UPDATE policies SET current_version_id = 3 WHERE policy_id = 3 AND current_version_id IS NULL;
+UPDATE policies SET current_version_id = 4 WHERE policy_id = 4 AND current_version_id IS NULL;
 
 -- ─── Platform Drivers Registry Seed ─────────────────────────────────────────
 INSERT INTO metadata_platform_drivers (driver_code, driver_name, description, fields) VALUES
@@ -461,6 +469,25 @@ ON CONFLICT (driver_code) DO UPDATE SET
     driver_name = EXCLUDED.driver_name,
     description = EXCLUDED.description,
     fields = EXCLUDED.fields;
+
+-- ─── Platform User Mappings Seed ──────────────────────────────────────────────
+INSERT INTO platform_user_mappings (user_id, platform_id, platform_code, external_user_id) VALUES
+(1, 1, 'SNOWFLAKE', 'ALICE_CDO_SF'),
+(1, 2, 'REDSHIFT',  'alice_cdo_rs'),
+(2, 1, 'SNOWFLAKE', 'BOB_HR_SF'),
+(2, 2, 'REDSHIFT',  'bob_hr_rs'),
+(3, 1, 'SNOWFLAKE', 'CAROL_MKT_SF'),
+(3, 2, 'REDSHIFT',  'carol_mkt_rs'),
+(4, 1, 'SNOWFLAKE', 'DAVE_OPS_SF'),
+(4, 2, 'REDSHIFT',  'dave_ops_rs'),
+(5, 1, 'SNOWFLAKE', 'EVE_FIN_SF'),
+(5, 2, 'REDSHIFT',  'eve_fin_rs'),
+(6, 1, 'SNOWFLAKE', 'FRANK_NGUYEN_SF'),
+(6, 2, 'REDSHIFT',  'frank_nguyen_rs'),
+(7, 1, 'SNOWFLAKE', 'ADMIN_SF'),
+(7, 2, 'REDSHIFT',  'admin_rs')
+ON CONFLICT (user_id, platform_code) DO UPDATE SET
+    external_user_id = EXCLUDED.external_user_id;
 
 -- ─── Automated Tag Discovery Identifiers Seed ─────────────────────────────────
 INSERT INTO metadata_tag_rules (tag_path, category, regex_pattern, description) VALUES
@@ -498,6 +525,7 @@ SELECT setval('metadata_tags_tag_id_seq',                      COALESCE((SELECT 
 SELECT setval('metadata_tag_assignments_assignment_id_seq',    COALESCE((SELECT MAX(assignment_id) FROM metadata_tag_assignments), 1));
 SELECT setval('data_product_table_mappings_mapping_id_seq',    COALESCE((SELECT MAX(mapping_id) FROM data_product_table_mappings), 1));
 SELECT setval('platform_role_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM platform_role_mappings), 1));
+SELECT setval('platform_user_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM platform_user_mappings), 1));
 SELECT setval('policies_policy_id_seq',                        COALESCE((SELECT MAX(policy_id) FROM policies), 1));
 SELECT setval('policy_versions_version_id_seq',                COALESCE((SELECT MAX(version_id) FROM policy_versions), 1));
 SELECT setval('policy_rules_rule_id_seq',                      COALESCE((SELECT MAX(rule_id) FROM policy_rules), 1));
