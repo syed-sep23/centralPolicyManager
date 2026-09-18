@@ -183,8 +183,8 @@ async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[st
                     "role_code": uc.get("role_code") or s_dict.get("role_code"),
                     "role_name": uc.get("role_name") or s_dict.get("role_name"),
                     "external_mappings": ext_map,
-                    "snowflake_user": ext_map.get("SNOWFLAKE") or uc["username"].upper(),
-                    "redshift_user": ext_map.get("REDSHIFT") or uc["username"].lower(),
+                    "snowflake_user": ext_map.get("SNOWFLAKE"),
+                    "redshift_user": ext_map.get("REDSHIFT"),
                 }
                 resolved_members.append(u_obj)
                 if uid not in rule_users_dict:

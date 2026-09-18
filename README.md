@@ -12,7 +12,7 @@ Modern data estates span diverse cloud platforms—**Snowflake**, **Amazon Redsh
 
 ### The CES Solution
 
-**Central Entitlement Service (CES)** is a unified, open-source data entitlement platform modeled after the **Immuta enterprise data security paradigm**. CES provides:
+**Central Entitlement Service (CES)** is a unified, open-source data entitlement platform modeled after the **CES enterprise data security paradigm**. CES provides:
 
 1. **Global Policy Builder**: Define a policy *once* (e.g., *"Mask columns classified as PII.Email for all users except Fraud Auditors with active business purpose"*), and compile it automatically into platform-specific SQL DDL or DDM & RLS SQL and OPA policies.
 2. **Zero-Proxy Performance**: Compiles native SQL DDL (Snowflake Dynamic Masking Policies, Row Access Policies, Amazon Redshift Native DDM, and Redshift RLS) pushed directly to the underlying engines—ensuring **0 ms query overhead**.
@@ -123,7 +123,7 @@ CREATE DATABASE IF NOT EXISTS GOVERNANCE_DB;
 CREATE SCHEMA IF NOT EXISTS GOVERNANCE_DB.POLICIES;
 CREATE SCHEMA IF NOT EXISTS GOVERNANCE_DB.TAGS;
 
--- 2. Tag-Based Masking Policy (Immuta Global Paradigm)
+-- 2. Tag-Based Masking Policy (CES Global Paradigm)
 CREATE OR REPLACE MASKING POLICY GOVERNANCE_DB.POLICIES.mask_customer_pii_email AS (val VARCHAR) RETURNS VARCHAR ->
   CASE
     WHEN CURRENT_ROLE() IN ('ACCOUNTADMIN', 'CES_ROLE_COMPLIANCE') THEN val

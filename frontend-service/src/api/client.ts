@@ -37,7 +37,7 @@ export const authApi = {
 export const policiesApi = {
   list: (params?: { page?: number; size?: number; status?: string; domain_id?: number }) =>
     api.get('/policies', { params }),
-  get: (id: number)  => api.get(`/policies/${id}`),
+  get: (id: number) => api.get(`/policies/${id}`),
   create: (data: unknown) => api.post('/policies', data),
   previewCompile: (data: unknown) => api.post('/policies/preview-compile', data),
   update: (id: number, data: unknown) => api.put(`/policies/${id}`, data),
@@ -92,11 +92,11 @@ export const tasksApi = {
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 export const metadataApi = {
-  drivers:          () => api.get('/metadata/platforms/drivers'),
-  platforms:        () => api.get('/metadata/platforms'),
-  platform:         (id: number) => api.get(`/metadata/platforms/${id}`),
-  createPlatform:   (data: any) => api.post('/metadata/platforms', data),
-  updatePlatform:   (id: number, data: any) => api.put(`/metadata/platforms/${id}`, data),
+  drivers: () => api.get('/metadata/platforms/drivers'),
+  platforms: () => api.get('/metadata/platforms'),
+  platform: (id: number) => api.get(`/metadata/platforms/${id}`),
+  createPlatform: (data: any) => api.post('/metadata/platforms', data),
+  updatePlatform: (id: number, data: any) => api.put(`/metadata/platforms/${id}`, data),
   testConnectionDirect: async (data: any) => {
     try {
       const res = await api.post('/metadata/platforms/test-connection', data)
@@ -129,80 +129,80 @@ export const metadataApi = {
       throw err
     }
   },
-  testConnection:   (data: any) => metadataApi.testConnectionDirect(data),
-  deletePlatform:   (id: number) => api.delete(`/metadata/platforms/${id}`),
-  syncPlatform:     (id: number) => api.post(`/metadata/platforms/${id}/sync`),
+  testConnection: (data: any) => metadataApi.testConnectionDirect(data),
+  deletePlatform: (id: number) => api.delete(`/metadata/platforms/${id}`),
+  syncPlatform: (id: number) => api.post(`/metadata/platforms/${id}/sync`),
   syncAllPlatforms: () => api.post('/metadata/platforms/sync-all'),
-  databases:        (platformId: number) => api.get(`/metadata/platforms/${platformId}/databases`),
-  schemas:          (dbId: number) => api.get(`/metadata/databases/${dbId}/schemas`),
-  tables:           (schemaId: number) => api.get(`/metadata/schemas/${schemaId}/tables`),
-  columns:          (tableId: number) => api.get(`/metadata/tables/${tableId}/columns`),
+  databases: (platformId: number) => api.get(`/metadata/platforms/${platformId}/databases`),
+  schemas: (dbId: number) => api.get(`/metadata/databases/${dbId}/schemas`),
+  tables: (schemaId: number) => api.get(`/metadata/schemas/${schemaId}/tables`),
+  columns: (tableId: number) => api.get(`/metadata/tables/${tableId}/columns`),
   tablesByPlatforms: (platformIds: number[]) => api.get('/metadata/tables/by-platforms', { params: { platform_ids: platformIds.join(',') } }),
-  columnsByTables:  (tableIds: number[]) => api.get('/metadata/columns/by-tables', { params: { table_ids: tableIds.join(',') } }),
-  search:           (q: string, type?: string) => api.get('/metadata/search', { params: { q, type } }),
+  columnsByTables: (tableIds: number[]) => api.get('/metadata/columns/by-tables', { params: { table_ids: tableIds.join(',') } }),
+  search: (q: string, type?: string) => api.get('/metadata/search', { params: { q, type } }),
   // Domains
-  domains:          () => api.get('/metadata/domains'),
-  createDomain:     (data: any) => api.post('/metadata/domains', data),
-  updateDomain:     (id: number, data: any) => api.put(`/metadata/domains/${id}`, data),
-  deleteDomain:     (id: number) => api.delete(`/metadata/domains/${id}`),
+  domains: () => api.get('/metadata/domains'),
+  createDomain: (data: any) => api.post('/metadata/domains', data),
+  updateDomain: (id: number, data: any) => api.put(`/metadata/domains/${id}`, data),
+  deleteDomain: (id: number) => api.delete(`/metadata/domains/${id}`),
   // Products
-  products:         (domainId?: number) => api.get('/metadata/products', { params: { domain_id: domainId } }),
-  createProduct:    (data: any) => api.post('/metadata/products', data),
-  updateProduct:    (id: number, data: any) => api.put(`/metadata/products/${id}`, data),
-  deleteProduct:    (id: number) => api.delete(`/metadata/products/${id}`),
+  products: (domainId?: number) => api.get('/metadata/products', { params: { domain_id: domainId } }),
+  createProduct: (data: any) => api.post('/metadata/products', data),
+  updateProduct: (id: number, data: any) => api.put(`/metadata/products/${id}`, data),
+  deleteProduct: (id: number) => api.delete(`/metadata/products/${id}`),
   // Product ↔ Platform links
-  productPlatforms:     (productId: number) => api.get(`/metadata/products/${productId}/platforms`),
-  linkProductPlatform:  (productId: number, platformId: number) => api.post(`/metadata/products/${productId}/platforms/${platformId}`),
-  unlinkProductPlatform:(productId: number, platformId: number) => api.delete(`/metadata/products/${productId}/platforms/${platformId}`),
-  dspmMetrics:      () => api.get('/metadata/dspm/posture-metrics'),
+  productPlatforms: (productId: number) => api.get(`/metadata/products/${productId}/platforms`),
+  linkProductPlatform: (productId: number, platformId: number) => api.post(`/metadata/products/${productId}/platforms/${platformId}`),
+  unlinkProductPlatform: (productId: number, platformId: number) => api.delete(`/metadata/products/${productId}/platforms/${platformId}`),
+  dspmMetrics: () => api.get('/metadata/dspm/posture-metrics'),
 }
 
-// ─── Users, Groups & Immuta ABAC Identity ─────────────────────────────────────
+// ─── Users, Groups & CES ABAC Identity ─────────────────────────────────────
 export const rbacApi = {
-  users:       (page = 1, size = 50) => api.get('/users', { params: { page, size } }),
-  user:        (id: number) => api.get(`/users/${id}`),
-  createUser:  (data: unknown) => api.post('/users', data),
-  updateUser:  (id: number, data: unknown) => api.put(`/users/${id}`, data),
-  userRoles:   (id: number) => api.get(`/users/${id}/roles`),
-  userAttrs:   (id: number) => api.get(`/users/${id}/attributes`),
+  users: (page = 1, size = 50) => api.get('/users', { params: { page, size } }),
+  user: (id: number) => api.get(`/users/${id}`),
+  createUser: (data: unknown) => api.post('/users', data),
+  updateUser: (id: number, data: unknown) => api.put(`/users/${id}`, data),
+  userRoles: (id: number) => api.get(`/users/${id}/roles`),
+  userAttrs: (id: number) => api.get(`/users/${id}/attributes`),
   effectiveAttrs: (id: number) => api.get(`/users/${id}/effective-attributes`),
-  upsertAttr:  (id: number, data: unknown) => api.put(`/users/${id}/attributes`, data),
-  deleteAttr:  (id: number, key: string) => api.delete(`/users/${id}/attributes/${key}`),
+  upsertAttr: (id: number, data: unknown) => api.put(`/users/${id}/attributes`, data),
+  deleteAttr: (id: number, key: string) => api.delete(`/users/${id}/attributes/${key}`),
   externalMappings: (id: number) => api.get(`/users/${id}/external-mappings`),
   updateExternalMappings: (id: number, mappings: unknown[]) => api.put(`/users/${id}/external-mappings`, mappings),
   supportedPlatforms: () => api.get('/users/supported-platforms'),
-  roles:       () => api.get('/roles'),
-  createRole:  (data: unknown) => api.post('/roles', data),
-  updateRole:  (id: number, data: unknown) => api.put(`/roles/${id}`, data),
-  deleteRole:  (id: number) => api.delete(`/roles/${id}`),
-  roleAttrs:   (id: number) => api.get(`/roles/${id}/attributes`),
+  roles: () => api.get('/roles'),
+  createRole: (data: unknown) => api.post('/roles', data),
+  updateRole: (id: number, data: unknown) => api.put(`/roles/${id}`, data),
+  deleteRole: (id: number) => api.delete(`/roles/${id}`),
+  roleAttrs: (id: number) => api.get(`/roles/${id}/attributes`),
   upsertRoleAttr: (id: number, data: unknown) => api.put(`/roles/${id}/attributes`, data),
   deleteRoleAttr: (id: number, key: string) => api.delete(`/roles/${id}/attributes/${key}`),
   roleMembers: (id: number) => api.get(`/roles/${id}/members`),
-  assignRole:  (data: { user_id: number; role_id: number }) => api.post('/roles/assign', data),
-  revokeRole:  (userId: number, roleId: number) =>
+  assignRole: (data: { user_id: number; role_id: number }) => api.post('/roles/assign', data),
+  revokeRole: (userId: number, roleId: number) =>
     api.delete('/roles/assign', { params: { user_id: userId, role_id: roleId } }),
-  syncIdp:     () => api.post('/users/sync-idp'),
+  syncIdp: () => api.post('/users/sync-idp'),
 }
 
 // ─── Business Personas & Archetypes API ───────────────────────────────────────
 export const personasApi = {
-  list:         () => api.get('/personas'),
-  get:          (id: number) => api.get(`/personas/${id}`),
-  create:       (data: unknown) => api.post('/personas', data),
-  update:       (id: number, data: unknown) => api.put(`/personas/${id}`, data),
-  delete:       (id: number) => api.delete(`/personas/${id}`),
+  list: () => api.get('/personas'),
+  get: (id: number) => api.get(`/personas/${id}`),
+  create: (data: unknown) => api.post('/personas', data),
+  update: (id: number, data: unknown) => api.put(`/personas/${id}`, data),
+  delete: (id: number) => api.delete(`/personas/${id}`),
   assignGroups: (personaId: number, roleIds: number[]) =>
     api.post(`/personas/${personaId}/groups`, { role_ids: roleIds }),
-  removeGroup:  (personaId: number, roleId: number) =>
+  removeGroup: (personaId: number, roleId: number) =>
     api.delete(`/personas/${personaId}/groups/${roleId}`),
-  assignUsers:  (personaId: number, userIds: number[]) =>
+  assignUsers: (personaId: number, userIds: number[]) =>
     api.post(`/personas/${personaId}/users`, { user_ids: userIds }),
-  removeUser:   (personaId: number, userId: number) =>
+  removeUser: (personaId: number, userId: number) =>
     api.delete(`/personas/${personaId}/users/${userId}`),
-  upsertAttr:   (personaId: number, data: unknown) =>
+  upsertAttr: (personaId: number, data: unknown) =>
     api.put(`/personas/${personaId}/attributes`, data),
-  deleteAttr:   (personaId: number, key: string) =>
+  deleteAttr: (personaId: number, key: string) =>
     api.delete(`/personas/${personaId}/attributes/${key}`),
 }
 

@@ -166,7 +166,13 @@ async def _async_deploy_policy(
         platform_statuses = []
         for p in platforms:
             p_code = p["platform_code"]
-            connector_url = settings[f"{p.driver_code}_URL"]
+
+            # Explicit connector URL mapping — no dynamic settings lookup
+            CONNECTOR_URL_MAP = {
+                "SNOWFLAKE": settings.SNOWFLAKE_CONNECTOR_URL,
+                "REDSHIFT": settings.REDSHIFT_CONNECTOR_URL,
+            }
+            connector_url = CONNECTOR_URL_MAP.get(p.driver_code)
             p_start = time.time()
             p_started_at = datetime.now(timezone.utc)
 
