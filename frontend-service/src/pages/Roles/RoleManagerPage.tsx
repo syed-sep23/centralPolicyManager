@@ -89,6 +89,17 @@ export default function RoleManagerPage() {
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupCode, setNewGroupCode] = useState('')
   const [newGroupDesc, setNewGroupDesc] = useState('')
+  const [newGroupUserIds, setNewGroupUserIds] = useState<string[]>([])
+  const [newGroupPersonaIds, setNewGroupPersonaIds] = useState<string[]>([])
+
+  // Edit Group Modal
+  const [editGroupModalOpened, setEditGroupModalOpened] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<any | null>(null)
+  const [editGroupName, setEditGroupName] = useState('')
+  const [editGroupCode, setEditGroupCode] = useState('')
+  const [editGroupDesc, setEditGroupDesc] = useState('')
+  const [editGroupUserIds, setEditGroupUserIds] = useState<string[]>([])
+  const [editGroupPersonaIds, setEditGroupPersonaIds] = useState<string[]>([])
 
   // Persona Modals & Drawers
   const [selectedPersona, setSelectedPersona] = useState<any | null>(null)
@@ -194,12 +205,48 @@ export default function RoleManagerPage() {
     mutationFn: (data: any) => rbacApi.createRole(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['personas'] })
       setCreateGroupModal(false)
       setNewGroupName(''); setNewGroupCode(''); setNewGroupDesc('')
+      setNewGroupUserIds([]); setNewGroupPersonaIds([])
       notifications.show({ title: 'Identity Group Created ✅', message: 'New group created successfully in directory', color: 'teal' })
     },
     onError: (err: any) => {
       notifications.show({ title: 'Creation Failed', message: err.response?.data?.detail || 'Error creating group', color: 'red' })
+    },
+  })
+
+  const updateGroupMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => rbacApi.updateRole(id, data),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['personas'] })
+      queryClient.invalidateQueries({ queryKey: ['group-members', editingGroup?.role_id] })
+      if (selectedGroup && selectedGroup.role_id === res.data?.role_id) {
+        setSelectedGroup((prev: any) => ({ ...prev, ...res.data }))
+      }
+      setEditGroupModalOpened(false)
+      notifications.show({ title: 'Identity Group Updated ✅', message: 'Group metadata and memberships updated', color: 'teal' })
+    },
+    onError: (err: any) => {
+      notifications.show({ title: 'Update Failed', message: err.response?.data?.detail || 'Error updating group', color: 'red' })
+    },
+  })
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (id: number) => rbacApi.deleteRole(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['personas'] })
+      setGroupDrawerOpened(false)
+      setEditGroupModalOpened(false)
+      notifications.show({ title: 'Group Deleted', message: 'Identity group removed from directory', color: 'gray' })
+    },
+    onError: (err: any) => {
+      notifications.show({ title: 'Delete Failed', message: err.response?.data?.detail || 'Error deleting group', color: 'red' })
     },
   })
 
@@ -436,6 +483,35 @@ export default function RoleManagerPage() {
   const handleInspectGroup = (g: any) => {
     setSelectedGroup(g)
     setGroupDrawerOpened(true)
+  }
+
+  const handleOpenEditGroup = (g: any) => {
+    setEditingGroup(g)
+    setEditGroupName(g.role_name || '')
+    setEditGroupCode(g.role_code || '')
+    setEditGroupDesc(g.description || '')
+    // Personas this group belongs to
+    setEditGroupPersonaIds((g.personas || []).map((p: any) => String(p.persona_id)))
+    // Member users
+    const memberUids = (userList || [])
+      .filter((u: any) => (u.groups || []).some((gr: any) => gr.role_id === g.role_id))
+      .map((u: any) => String(u.user_id))
+    setEditGroupUserIds(memberUids)
+    setEditGroupModalOpened(true)
+  }
+
+  const handleSaveEditGroup = () => {
+    if (!editingGroup) return
+    updateGroupMutation.mutate({
+      id: editingGroup.role_id,
+      data: {
+        role_name: editGroupName.trim(),
+        role_code: editGroupCode.trim(),
+        description: editGroupDesc.trim(),
+        user_ids: editGroupUserIds.map(Number),
+        persona_ids: editGroupPersonaIds.map(Number),
+      },
+    })
   }
 
   const handleInspectPersona = (p: any) => {
@@ -793,14 +869,25 @@ export default function RoleManagerPage() {
                             </Badge>
                           </Table.Td>
                           <Table.Td>
-                            <Button
-                              size="xs"
-                              variant="default"
-                              leftSection={<IconHierarchy size={14} />}
-                              onClick={() => handleInspectGroup(g)}
-                            >
-                              Inspect Group
-                            </Button>
+                            <Group gap="xs" wrap="nowrap">
+                              <Button
+                                size="xs"
+                                variant="light"
+                                color="indigo"
+                                leftSection={<IconEdit size={14} />}
+                                onClick={() => handleOpenEditGroup(g)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="default"
+                                leftSection={<IconHierarchy size={14} />}
+                                onClick={() => handleInspectGroup(g)}
+                              >
+                                Inspect
+                              </Button>
+                            </Group>
                           </Table.Td>
                         </Table.Tr>
                       )
@@ -1128,17 +1215,43 @@ export default function RoleManagerPage() {
         {selectedGroup && (
           <Stack gap="md">
             <Paper p="md" radius="md" withBorder>
-              <Group gap="md">
-                <ThemeIcon color="violet" size="xl" radius="md" variant="light">
-                  <IconFolder size={28} />
-                </ThemeIcon>
-                <Box>
-                  <Group gap="xs">
-                    <Title order={4}>{selectedGroup.role_name}</Title>
-                    <Badge color="violet" variant="outline">{selectedGroup.role_code}</Badge>
-                  </Group>
-                  <Text size="xs" c="dimmed">{selectedGroup.description || 'Identity directory group'}</Text>
-                </Box>
+              <Group justify="space-between" align="flex-start">
+                <Group gap="md">
+                  <ThemeIcon color="violet" size="xl" radius="md" variant="light">
+                    <IconFolder size={28} />
+                  </ThemeIcon>
+                  <Box>
+                    <Group gap="xs">
+                      <Title order={4}>{selectedGroup.role_name}</Title>
+                      <Badge color="violet" variant="outline">{selectedGroup.role_code}</Badge>
+                    </Group>
+                    <Text size="xs" c="dimmed">{selectedGroup.description || 'Identity directory group'}</Text>
+                  </Box>
+                </Group>
+                <Group gap="xs">
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="indigo"
+                    leftSection={<IconEdit size={14} />}
+                    onClick={() => handleOpenEditGroup(selectedGroup)}
+                  >
+                    Edit Group
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    color="red"
+                    leftSection={<IconTrash size={14} />}
+                    onClick={() => {
+                      if (confirm(`Delete identity group "${selectedGroup.role_name}"?`)) {
+                        deleteGroupMutation.mutate(selectedGroup.role_id)
+                      }
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </Group>
               </Group>
             </Paper>
 
@@ -1583,6 +1696,35 @@ export default function RoleManagerPage() {
             value={newGroupDesc}
             onChange={(e) => setNewGroupDesc(e.target.value)}
           />
+
+          <Divider label="Members & Personas (Optional)" labelPosition="center" my="xs" />
+
+          <MultiSelect
+            label="Initial Member Users (Optional)"
+            placeholder="Select users to assign to this group..."
+            data={userList.map((u) => ({
+              value: String(u.user_id),
+              label: `${u.display_name || u.username} (${u.email})`,
+            }))}
+            value={newGroupUserIds}
+            onChange={setNewGroupUserIds}
+            searchable
+            clearable
+          />
+
+          <MultiSelect
+            label="Assign to Personas (Optional)"
+            placeholder="Select personas that contain this group..."
+            data={personaList.map((p) => ({
+              value: String(p.persona_id),
+              label: `${p.persona_name} (${p.persona_code})`,
+            }))}
+            value={newGroupPersonaIds}
+            onChange={setNewGroupPersonaIds}
+            searchable
+            clearable
+          />
+
           <Button
             mt="md"
             color="indigo"
@@ -1592,10 +1734,104 @@ export default function RoleManagerPage() {
               role_name: newGroupName,
               role_code: newGroupCode,
               description: newGroupDesc,
+              user_ids: newGroupUserIds.map(Number),
+              persona_ids: newGroupPersonaIds.map(Number),
             })}
           >
             Create Identity Group
           </Button>
+        </Stack>
+      </Modal>
+
+      {/* ── EDIT GROUP MODAL ───────────────────────────────────────────────── */}
+      <Modal
+        opened={editGroupModalOpened}
+        onClose={() => setEditGroupModalOpened(false)}
+        title={
+          <Group gap="xs">
+            <ThemeIcon color="violet" variant="light" size="md">
+              <IconEdit size={18} />
+            </ThemeIcon>
+            <Title order={4}>Edit Identity Group: {editingGroup?.role_name}</Title>
+          </Group>
+        }
+        radius="md"
+        size="lg"
+      >
+        <Stack gap="sm">
+          <Grid>
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <TextInput
+                label="Group Name"
+                required
+                value={editGroupName}
+                onChange={(e) => setEditGroupName(e.target.value)}
+              />
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <TextInput
+                label="Group Code"
+                required
+                value={editGroupCode}
+                onChange={(e) => setEditGroupCode(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
+              />
+            </Grid.Col>
+          </Grid>
+          <Textarea
+            label="Description"
+            placeholder="Identity group description"
+            value={editGroupDesc}
+            onChange={(e) => setEditGroupDesc(e.target.value)}
+          />
+          <Divider label="Group Memberships & Personas" labelPosition="center" my="xs" />
+          <MultiSelect
+            label="Member Users"
+            description="Users who belong to this identity group"
+            placeholder="Select users in this group..."
+            data={userList.map((u) => ({
+              value: String(u.user_id),
+              label: `${u.display_name || u.username} (${u.email})`,
+            }))}
+            value={editGroupUserIds}
+            onChange={setEditGroupUserIds}
+            searchable
+            clearable
+          />
+          <MultiSelect
+            label="Belongs to Personas"
+            description="High-level business personas that include this identity group"
+            placeholder="Select personas..."
+            data={personaList.map((p) => ({
+              value: String(p.persona_id),
+              label: `${p.persona_name} (${p.persona_code})`,
+            }))}
+            value={editGroupPersonaIds}
+            onChange={setEditGroupPersonaIds}
+            searchable
+            clearable
+          />
+          <Group justify="space-between" mt="md">
+            <Button
+              variant="subtle"
+              color="red"
+              leftSection={<IconTrash size={14} />}
+              onClick={() => {
+                if (editingGroup && confirm(`Delete identity group "${editingGroup.role_name}"?`)) {
+                  deleteGroupMutation.mutate(editingGroup.role_id)
+                }
+              }}
+            >
+              Delete Group
+            </Button>
+            <Button
+              color="indigo"
+              loading={updateGroupMutation.isPending}
+              disabled={!editGroupName.trim() || !editGroupCode.trim()}
+              onClick={handleSaveEditGroup}
+            >
+              Save Group Changes
+            </Button>
+          </Group>
         </Stack>
       </Modal>
 

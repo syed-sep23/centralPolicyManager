@@ -68,6 +68,18 @@ class RoleCreate(BaseModel):
     role_code: str
     description: Optional[str] = None
     parent_role_id: Optional[int] = None
+    user_ids: Optional[list[int]] = []
+    persona_ids: Optional[list[int]] = []
+
+
+class RoleUpdate(BaseModel):
+    role_name: Optional[str] = None
+    role_code: Optional[str] = None
+    description: Optional[str] = None
+    parent_role_id: Optional[int] = None
+    is_active: Optional[bool] = None
+    user_ids: Optional[list[int]] = None
+    persona_ids: Optional[list[int]] = None
 
 
 class PersonaCreate(BaseModel):
@@ -147,68 +159,27 @@ async def _ensure_persona_tables(db: AsyncSession):
         )
     """))
 
-    p_count = (await db.execute(text("SELECT COUNT(*) FROM personas"))).scalar() or 0
-    if p_count == 0:
-        org_row = (await db.execute(text("SELECT organization_id FROM organizations LIMIT 1"))).first()
-        org_id = org_row[0] if org_row else 1
+    await db.commit()
 
-        personas_seed = [
-            ("Senior Quantitative Analyst", "PERSONA_SR_QUANT", "Quantitative modelers and financial risk engineers with GL and transactional analytical clearance"),
-            ("Data Platform Engineer", "PERSONA_DATA_PLATFORM", "Core infrastructure engineers responsible for cross-cloud pipelines and transformations"),
-            ("Compliance & Risk Officer", "PERSONA_RISK_AUDITOR", "Global compliance audit and security oversight officers inspecting restricted data domains"),
-            ("Growth & Marketing Strategist", "PERSONA_MARKETING_LEAD", "Omnichannel marketing campaign strategists analyzing customer profile segments"),
-        ]
-        for p_name, p_code, p_desc in personas_seed:
-            await db.execute(text("""
-                INSERT INTO personas (organization_id, persona_name, persona_code, description, is_active)
-                VALUES (:org_id, :name, :code, :desc, TRUE)
-                ON CONFLICT (organization_id, persona_code) DO NOTHING
-            """), {"org_id": org_id, "name": p_name, "code": p_code, "desc": p_desc})
 
-        persona_rows = (await db.execute(text("SELECT persona_id, persona_code FROM personas"))).fetchall()
-        p_map = {p[1]: p[0] for p in persona_rows}
-
-        roles = (await db.execute(text("SELECT role_id, role_code FROM roles"))).fetchall()
-        role_map = {r[1]: r[0] for r in roles}
-
-        persona_groups = [
-            ("PERSONA_SR_QUANT", "ROLE_ANALYST"),
-            ("PERSONA_SR_QUANT", "FINANCE_ANALYST"),
-            ("PERSONA_DATA_PLATFORM", "ROLE_DATA_ENGINEER"),
-            ("PERSONA_DATA_PLATFORM", "DATA_ENGINEER"),
-            ("PERSONA_RISK_AUDITOR", "ROLE_COMPLIANCE"),
-            ("PERSONA_RISK_AUDITOR", "ROLE_SECURITY"),
-            ("PERSONA_MARKETING_LEAD", "ROLE_MARKETING"),
-        ]
-        for p_code, r_code in persona_groups:
-            pid = p_map.get(p_code)
-            rid = role_map.get(r_code)
-            if pid and rid:
-                await db.execute(text("""
-                    INSERT INTO persona_group_mappings (persona_id, role_id)
-                    VALUES (:pid, :rid)
-                    ON CONFLICT (persona_id, role_id) DO NOTHING
-                """), {"pid": pid, "rid": rid})
-
-        users = (await db.execute(text("SELECT user_id, username FROM users"))).fetchall()
-        user_map = {u[1]: u[0] for u in users}
-        persona_users = [
-            ("PERSONA_SR_QUANT", "alice.chen"),
-            ("PERSONA_DATA_PLATFORM", "frank.nguyen"),
-            ("PERSONA_RISK_AUDITOR", "eve.taylor"),
-            ("PERSONA_MARKETING_LEAD", "carol.jones"),
-        ]
-        for p_code, uname in persona_users:
-            pid = p_map.get(p_code)
-            uid = user_map.get(uname)
-            if pid and uid:
-                await db.execute(text("""
-                    INSERT INTO persona_user_mappings (persona_id, user_id)
-                    VALUES (:pid, :uid)
-                    ON CONFLICT (persona_id, user_id) DO NOTHING
-                """), {"pid": pid, "uid": uid})
-
+async def _get_or_create_default_org_id(db: AsyncSession) -> int:
+    """Return an existing organization_id or create the default root organization if none exists."""
+    row = (await db.execute(text("SELECT organization_id FROM organizations ORDER BY organization_id LIMIT 1"))).first()
+    if row:
+        return row[0]
+    res = await db.execute(text("""
+        INSERT INTO organizations (org_name, org_code, description)
+        VALUES ('Default Organization', 'DEFAULT', 'Primary Default Organization')
+        ON CONFLICT (org_code) DO NOTHING
+        RETURNING organization_id
+    """))
+    inserted = res.first()
+    if inserted:
         await db.commit()
+        return inserted[0]
+    row = (await db.execute(text("SELECT organization_id FROM organizations ORDER BY organization_id LIMIT 1"))).first()
+    return row[0] if row else 1
+
 
 
 # ─── Users & Effective Attributes ─────────────────────────────────────────────
@@ -778,8 +749,7 @@ async def create_user(
 ):
     """Create a new user account with initial group memberships, persona assignments, and attributes."""
     await _ensure_persona_tables(db)
-    org_row = (await db.execute(text("SELECT organization_id FROM organizations LIMIT 1"))).first()
-    org_id = org_row.organization_id if org_row else 1
+    org_id = await _get_or_create_default_org_id(db)
 
     ins_res = (
         (
@@ -1119,8 +1089,7 @@ async def create_role(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new Identity Group."""
-    org_row = (await db.execute(text("SELECT organization_id FROM organizations LIMIT 1"))).first()
-    org_id = org_row.organization_id if org_row else 1
+    org_id = await _get_or_create_default_org_id(db)
 
     ins_res = (
         (
@@ -1142,8 +1111,143 @@ async def create_role(
         .mappings()
         .first()
     )
+    new_rid = ins_res["role_id"]
+
+    # Assign initial member users
+    for uid in body.user_ids or []:
+        await db.execute(
+            text("""
+                INSERT INTO user_role_mappings (user_id, role_id, is_active)
+                VALUES (:u, :r, TRUE)
+                ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = TRUE
+            """),
+            {"u": uid, "r": new_rid},
+        )
+
+    # Assign initial personas
+    if body.persona_ids:
+        await _ensure_persona_tables(db)
+        for pid in body.persona_ids:
+            await db.execute(
+                text("""
+                    INSERT INTO persona_group_mappings (persona_id, role_id)
+                    VALUES (:p, :r)
+                    ON CONFLICT (persona_id, role_id) DO NOTHING
+                """),
+                {"p": pid, "r": new_rid},
+            )
+
     await db.commit()
     return dict(ins_res)
+
+
+@router.put("/roles/{role_id}")
+async def update_role(
+    role_id: int,
+    body: RoleUpdate,
+    current_user: CurrentUser = Depends(require_roles("POLICY_ADMIN", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update identity group metadata, member users, and persona associations."""
+    existing = (
+        await db.execute(text("SELECT role_id, organization_id FROM roles WHERE role_id = :r"), {"r": role_id})
+    ).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Identity group not found")
+
+    code = body.role_code.strip().upper().replace(" ", "_") if body.role_code else None
+
+    await db.execute(
+        text("""
+            UPDATE roles
+            SET role_name = COALESCE(:name, role_name),
+                role_code = COALESCE(:code, role_code),
+                description = COALESCE(:desc, description),
+                parent_role_id = COALESCE(:parent_id, parent_role_id),
+                is_active = COALESCE(:is_active, is_active),
+                updated_at = NOW()
+            WHERE role_id = :r
+        """),
+        {
+            "r": role_id,
+            "name": body.role_name.strip() if body.role_name else None,
+            "code": code,
+            "desc": body.description,
+            "parent_id": body.parent_role_id,
+            "is_active": body.is_active,
+        },
+    )
+
+    # Sync member users if provided
+    if body.user_ids is not None:
+        if len(body.user_ids) == 0:
+            await db.execute(
+                text("DELETE FROM user_role_mappings WHERE role_id = :r"),
+                {"r": role_id},
+            )
+        else:
+            await db.execute(
+                text("DELETE FROM user_role_mappings WHERE role_id = :r AND NOT (user_id = ANY(:uids))"),
+                {"r": role_id, "uids": body.user_ids},
+            )
+            for uid in body.user_ids:
+                await db.execute(
+                    text("""
+                        INSERT INTO user_role_mappings (user_id, role_id, is_active)
+                        VALUES (:u, :r, TRUE)
+                        ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = TRUE
+                    """),
+                    {"u": uid, "r": role_id},
+                )
+
+    # Sync assigned personas if provided
+    if body.persona_ids is not None:
+        await _ensure_persona_tables(db)
+        if len(body.persona_ids) == 0:
+            await db.execute(
+                text("DELETE FROM persona_group_mappings WHERE role_id = :r"),
+                {"r": role_id},
+            )
+        else:
+            await db.execute(
+                text("DELETE FROM persona_group_mappings WHERE role_id = :r AND NOT (persona_id = ANY(:pids))"),
+                {"r": role_id, "pids": body.persona_ids},
+            )
+            for pid in body.persona_ids:
+                await db.execute(
+                    text("""
+                        INSERT INTO persona_group_mappings (persona_id, role_id)
+                        VALUES (:p, :r)
+                        ON CONFLICT (persona_id, role_id) DO NOTHING
+                    """),
+                    {"p": pid, "r": role_id},
+                )
+
+    await db.commit()
+
+    updated = (
+        (
+            await db.execute(
+                text("SELECT role_id, role_name, role_code, description, parent_role_id, is_active FROM roles WHERE role_id = :r"),
+                {"r": role_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return dict(updated)
+
+
+@router.delete("/roles/{role_id}")
+async def delete_role(
+    role_id: int,
+    current_user: CurrentUser = Depends(require_roles("POLICY_ADMIN", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an identity group."""
+    await db.execute(text("DELETE FROM roles WHERE role_id = :r"), {"r": role_id})
+    await db.commit()
+    return {"status": "deleted", "role_id": role_id}
 
 
 @router.get("/roles/{role_id}/attributes")
@@ -1260,8 +1364,7 @@ async def sync_from_idp(db: AsyncSession = Depends(get_db)):
     Reconciles identity groups and user memberships.
     """
     # Verify/create default enterprise groups
-    org_row = (await db.execute(text("SELECT organization_id FROM organizations LIMIT 1"))).first()
-    org_id = org_row.organization_id if org_row else 1
+    org_id = await _get_or_create_default_org_id(db)
 
     idp_groups = [
         ("Data Engineering", "ROLE_DATA_ENGINEER", "Data pipelines and platform infrastructure"),
@@ -1604,8 +1707,7 @@ async def create_persona(
 ):
     """Create a new functional user Persona with assigned Identity Groups and direct Member Users."""
     await _ensure_persona_tables(db)
-    org_row = (await db.execute(text("SELECT organization_id FROM organizations LIMIT 1"))).first()
-    org_id = org_row.organization_id if org_row else 1
+    org_id = await _get_or_create_default_org_id(db)
 
     code = body.persona_code.strip().upper().replace(" ", "_")
 
