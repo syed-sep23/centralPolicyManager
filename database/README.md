@@ -24,7 +24,7 @@ database/
 
 | Order | Script File | Description | Key Tables Created |
 |---|---|---|---|
-| **1** | [`001_core_domain.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/001_core_domain.sql) | Identity & Access Management core models, ABAC user attributes, group attributes | `organizations`, `data_domains`, `data_products`, `roles`, `users`, `user_role_mappings`, `user_attributes`, `group_attributes`, `permissions`, `role_permissions` |
+| **1** | [`001_core_domain.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/001_core_domain.sql) | Identity & Access Management core models, ABAC user attributes, group attributes, Personas, persona-group mappings, and persona-user mappings | `organizations`, `data_domains`, `data_products`, `roles`, `users`, `user_role_mappings`, `user_attributes`, `group_attributes`, `personas`, `persona_user_mappings`, `persona_group_mappings`, `persona_attributes`, `permissions`, `role_permissions` |
 | **2** | [`002_metadata.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/002_metadata.sql) | Data Catalog, Cloud Platforms, Hierarchical Taxonomy Tags & Assignments | `metadata_platforms`, `metadata_databases`, `metadata_schemas`, `metadata_tables`, `metadata_columns`, `metadata_tags`, `metadata_tag_assignments`, `data_product_table_mappings`, `platform_role_mappings` |
 | **3** | [`003_policies.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/schema/003_policies.sql) | PBAC Purposes, Access Requests, Policy Engine AST & Audit Trail | `purposes`, `user_purposes`, `data_access_requests`, `abac_attribute_groups`, `policies`, `policy_versions`, `policy_rules`, `policy_rule_subjects`, `policy_rule_resources`, `policy_rule_actions`, `policy_rule_conditions`, `policy_version_targets`, `audit_events` |
 
@@ -32,7 +32,9 @@ database/
 
 | Script File | Description | Populated Data |
 |---|---|---|
-| [`004_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/004_sample_data.sql) | Complete enterprise seed data for fresh deployments | 7 users, 13 roles, user & group ABAC attributes, 6 PBAC purposes, user authorizations, 5 access requests, 2 platforms (Snowflake/Redshift), 10 tables, 76 columns, 29 hierarchical taxonomy tags, 20 tag assignments, 3 active policies, targets, and auto-increment sequence advancement |
+| [`004_sample_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/004_sample_data.sql) | Complete enterprise seed data for fresh deployments | 7 users, 13 roles (identity groups), 4 personas (with constituent groups, direct users, and ABAC attributes), user & group ABAC attributes, 6 PBAC purposes, user authorizations, 5 access requests, 2 platforms (Snowflake/Redshift), 10 tables, 76 columns, 29 hierarchical taxonomy tags, 20 tag assignments, 3 active policies, targets, and auto-increment sequence advancement |
+| [`004_sample_minimal_data.sql`](file:///d:/project/Central%20Entitlement%20Service/centralPolicyManager/database/seeds/004_sample_minimal_data.sql) | Minimal Core Seed Data for clean minimal boot | Essential tenant, drivers, 2 platforms, 3 users, 10 roles, 2 personas (with constituent groups and users), platform mappings, minimal data domain & data product, and sequence advancement |
+
 
 
 ---

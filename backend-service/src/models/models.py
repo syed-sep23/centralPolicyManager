@@ -121,6 +121,66 @@ class UserRoleMapping(Base):
     role: Mapped[Role] = relationship("Role")
 
 
+# ─── Persona (Functional Business Access Archetype) ───────────────────────────
+class Persona(Base):
+    __tablename__ = "personas"
+
+    persona_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.organization_id"), nullable=False
+    )
+    persona_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    persona_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ─── Persona User Mapping (Users in Persona) ──────────────────────────────────
+class PersonaUserMapping(Base):
+    __tablename__ = "persona_user_mappings"
+
+    mapping_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("personas.persona_id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    persona: Mapped[Persona] = relationship("Persona")
+    user: Mapped[User] = relationship("User")
+
+
+# ─── Persona Group Mapping (Groups in Persona) ────────────────────────────────
+class PersonaGroupMapping(Base):
+    __tablename__ = "persona_group_mappings"
+
+    mapping_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("personas.persona_id"), nullable=False)
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.role_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    persona: Mapped[Persona] = relationship("Persona")
+    role: Mapped[Role] = relationship("Role")
+
+
+# ─── Persona Attribute ────────────────────────────────────────────────────────
+class PersonaAttribute(Base):
+    __tablename__ = "persona_attributes"
+
+    attribute_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("personas.persona_id"), nullable=False)
+    attribute_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    attribute_value: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    persona: Mapped[Persona] = relationship("Persona")
+
+
 # ─── Policy ───────────────────────────────────────────────────────────────────
 class Policy(Base):
     __tablename__ = "policies"

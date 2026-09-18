@@ -117,6 +117,43 @@ INSERT INTO group_attributes (attribute_id, role_id, attribute_key, attribute_va
 (10, 13, 'region',           'US_WEST',          'MANUAL')
 ON CONFLICT (role_id, attribute_key) DO UPDATE SET attribute_value = EXCLUDED.attribute_value;
 
+-- ─── Personas (Functional Business Entitlement Archetypes) ─────────────────────
+INSERT INTO personas (persona_id, organization_id, persona_name, persona_code, description, is_active) VALUES
+(1, 1, 'Senior Quantitative Analyst', 'PERSONA_SR_QUANT',       'Quantitative modelers and financial risk engineers with GL and transactional analytical clearance', TRUE),
+(2, 1, 'Data Platform Engineer',     'PERSONA_DATA_PLATFORM',  'Core infrastructure engineers responsible for cross-cloud pipelines and transformations',           TRUE),
+(3, 1, 'Compliance & Risk Officer',   'PERSONA_RISK_AUDITOR',   'Global compliance audit and security oversight officers inspecting restricted data domains',         TRUE),
+(4, 1, 'Growth & Marketing Strategist','PERSONA_MARKETING_LEAD', 'Omnichannel marketing campaign strategists analyzing customer profile segments',                    TRUE)
+ON CONFLICT (persona_id) DO NOTHING;
+
+-- ─── Persona-Group Mappings (Member Groups in Persona) ─────────────────────────
+-- Personas compose Identity Groups
+INSERT INTO persona_group_mappings (mapping_id, persona_id, role_id) VALUES
+(1, 1, 6),   -- PERSONA_SR_QUANT        ← Finance Analyst (group 6)
+(2, 1, 9),   -- PERSONA_SR_QUANT        ← ROLE_ANALYST (group 9)
+(3, 2, 10),  -- PERSONA_DATA_PLATFORM   ← ROLE_DATA_ENGINEER (group 10)
+(4, 2, 3),   -- PERSONA_DATA_PLATFORM   ← Data Engineer (group 3)
+(5, 3, 11),  -- PERSONA_RISK_AUDITOR    ← ROLE_COMPLIANCE (group 11)
+(6, 3, 12),  -- PERSONA_RISK_AUDITOR    ← ROLE_SECURITY (group 12)
+(7, 4, 13)   -- PERSONA_MARKETING_LEAD  ← ROLE_MARKETING (group 13)
+ON CONFLICT (persona_id, role_id) DO NOTHING;
+
+-- ─── Persona-User Mappings (Direct Member Users in Persona) ───────────────────
+-- Personas also support direct user assignment
+INSERT INTO persona_user_mappings (mapping_id, persona_id, user_id) VALUES
+(1, 1, 1),   -- PERSONA_SR_QUANT        ← alice.chen (direct)
+(2, 2, 6),   -- PERSONA_DATA_PLATFORM   ← frank.nguyen (direct)
+(3, 3, 5),   -- PERSONA_RISK_AUDITOR    ← eve.taylor (direct)
+(4, 4, 3)    -- PERSONA_MARKETING_LEAD  ← carol.jones (direct)
+ON CONFLICT (persona_id, user_id) DO NOTHING;
+
+-- ─── Persona Attributes ───────────────────────────────────────────────────────
+INSERT INTO persona_attributes (attribute_id, persona_id, attribute_key, attribute_value) VALUES
+(1, 1, 'persona_tier', 'TIER_1_FINANCIAL'),
+(2, 2, 'persona_tier', 'TIER_1_INFRASTRUCTURE'),
+(3, 3, 'persona_tier', 'TIER_0_GOVERNANCE'),
+(4, 4, 'persona_tier', 'TIER_2_BUSINESS')
+ON CONFLICT (persona_id, attribute_key) DO UPDATE SET attribute_value = EXCLUDED.attribute_value;
+
 -- ─── Entitlement & Subscription Requests ──────────────────────────────────────
 INSERT INTO data_access_requests (request_id, request_number, requestor_id, domain_id, product_id, requested_role_id, access_level, justification, valid_for_days, status, reviewed_by_id, reviewed_at, review_comment) VALUES
 (1, 'REQ-2026-0001', 5, 1, 2, 9,  'READ', 'Urgent investigation of suspicious wire transfer activity in EMEA accounts for AML filing.', 30, 'APPROVED', 1, NOW() - INTERVAL '2 days', 'Approved for AML fraud investigation.'),
@@ -401,6 +438,10 @@ SELECT setval('users_user_id_seq',                             COALESCE((SELECT 
 SELECT setval('user_role_mappings_mapping_id_seq',             COALESCE((SELECT MAX(mapping_id) FROM user_role_mappings), 1));
 SELECT setval('user_attributes_attribute_id_seq',              COALESCE((SELECT MAX(attribute_id) FROM user_attributes), 1));
 SELECT setval('group_attributes_attribute_id_seq',             COALESCE((SELECT MAX(attribute_id) FROM group_attributes), 1));
+SELECT setval('personas_persona_id_seq',                       COALESCE((SELECT MAX(persona_id) FROM personas), 1));
+SELECT setval('persona_user_mappings_mapping_id_seq',          COALESCE((SELECT MAX(mapping_id) FROM persona_user_mappings), 1));
+SELECT setval('persona_group_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM persona_group_mappings), 1));
+SELECT setval('persona_attributes_attribute_id_seq',           COALESCE((SELECT MAX(attribute_id) FROM persona_attributes), 1));
 SELECT setval('data_access_requests_request_id_seq',           COALESCE((SELECT MAX(request_id) FROM data_access_requests), 1));
 SELECT setval('metadata_platforms_platform_id_seq',            COALESCE((SELECT MAX(platform_id) FROM metadata_platforms), 1));
 SELECT setval('metadata_databases_database_id_seq',            COALESCE((SELECT MAX(database_id) FROM metadata_databases), 1));

@@ -1,47 +1,50 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   Stack, Title, Text, TextInput, Select, Textarea, Button, Group,
-  Stepper, Box, Card, MultiSelect, Badge, Divider, Alert,
+  Stepper, Box, Card, MultiSelect, Badge, Alert,
   Paper, Switch, Loader, Tabs, SimpleGrid, ThemeIcon, Code,
-  ScrollArea, Tooltip,
+  ScrollArea, SegmentedControl,
 } from '@mantine/core'
 import {
-  IconShieldLock, IconFilter, IconKey, IconSparkles, IconCheck,
+  IconKey, IconFilter, IconShieldLock, IconSparkles, IconCheck,
   IconArrowLeft, IconArrowRight, IconSend, IconCode,
-  IconServer, IconUserCheck, IconTarget, IconEye,
+  IconTable, IconColumns, IconUsers, IconUser, IconChecklist,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import { policiesApi, metadataApi, rbacApi, connectorApi } from '../../api/client'
 
-// ─── Policy Archetypes ────────────────────────────────────────────────────────
-type PolicyArchetype = 'DATA_MASKING' | 'ROW_FILTER' | 'SUBSCRIPTION_ACCESS'
+// ─── Policy Archetypes (Strictly Ordered) ─────────────────────────────────────
+// 1. Data Subscription Policy
+// 2. Row-Level Filter Policy
+// 3. Data Masking Policy
+type PolicyArchetype = 'SUBSCRIPTION_ACCESS' | 'ROW_FILTER' | 'DATA_MASKING'
 
 const ARCHETYPES = [
   {
-    type: 'DATA_MASKING' as PolicyArchetype,
-    title: 'Data Masking Policy',
-    desc: 'Obfuscate sensitive columns (Hash, Email Redact, Partial, Nullify) based on column names or rules.',
-    icon: IconShieldLock,
-    color: 'violet',
-    badge: 'Column-Level Security',
+    type: 'SUBSCRIPTION_ACCESS' as PolicyArchetype,
+    title: '1. Data Subscription Policy',
+    desc: 'Grant table-level query SELECT access on designated tables across cloud platforms to allowed groups or users.',
+    icon: IconKey,
+    color: 'teal',
+    badge: 'Table Entitlement',
   },
   {
     type: 'ROW_FILTER' as PolicyArchetype,
-    title: 'Row-Level Filter Policy',
-    desc: 'Restrict rows dynamically based on user attributes (@user.department, @user.country, or status).',
+    title: '2. Row-Level Filter Policy',
+    desc: 'Filter table rows dynamically on specified column matching an operator and value for allowed groups or users.',
     icon: IconFilter,
     color: 'blue',
     badge: 'Row Access Control',
   },
   {
-    type: 'SUBSCRIPTION_ACCESS' as PolicyArchetype,
-    title: 'Data Subscription Policy',
-    desc: 'Grant or deny direct table access across data products to authorized roles.',
-    icon: IconKey,
-    color: 'teal',
-    badge: 'Table Entitlement',
+    type: 'DATA_MASKING' as PolicyArchetype,
+    title: '3. Data Masking Policy',
+    desc: 'Obfuscate sensitive table columns (Hash, Email Redact, Partial, Nullify) across selected tables for allowed groups or users.',
+    icon: IconShieldLock,
+    color: 'violet',
+    badge: 'Column-Level Security',
   },
 ]
 
@@ -54,6 +57,17 @@ const MASKING_TECHNIQUES = [
   { value: 'CUSTOM', label: 'Custom SQL Expression' },
 ]
 
+const FILTER_OPERATORS = [
+  { value: 'EQ', label: 'Equals (=)' },
+  { value: 'NEQ', label: 'Not Equals (!=)' },
+  { value: 'IN', label: 'In List (IN)' },
+  { value: 'CONTAINS', label: 'Contains (LIKE)' },
+  { value: 'GT', label: 'Greater Than (>)' },
+  { value: 'LT', label: 'Less Than (<)' },
+  { value: 'GTE', label: 'Greater Than or Equal (>=)' },
+  { value: 'LTE', label: 'Less Than or Equal (<=)' },
+]
+
 export default function PolicyStudioPage() {
   const { id } = useParams<{ id?: string }>()
   const isEditing = !!id
@@ -63,31 +77,32 @@ export default function PolicyStudioPage() {
   const [activeStep, setActiveStep] = useState(0)
 
   // ─── Step 1: Policy Meta & Archetype ─────────────────────────────────────────
+  const [archetype, setArchetype] = useState<PolicyArchetype>('SUBSCRIPTION_ACCESS')
   const [policyName, setPolicyName] = useState('')
   const [policyCode, setPolicyCode] = useState('')
   const [description, setDescription] = useState('')
   const [enforceMode, setEnforceMode] = useState<'ADVISORY' | 'ENFORCED'>('ENFORCED')
-  const [archetype, setArchetype] = useState<PolicyArchetype>('DATA_MASKING')
 
-  // ─── Step 2: Platform Scope & Triggers ───────────────────────────────────────
-  const [domainId, setDomainId] = useState<string | null>(null)
-  const [productId, setProductId] = useState<string | null>(null)
+  // ─── Step 2: Platform & Tables Scope ─────────────────────────────────────────
   const [targetPlatforms, setTargetPlatforms] = useState<string[]>([])
+  const [selectedTables, setSelectedTables] = useState<string[]>([])
 
-  // ─── Step 3: Action & Circumstance (CES DSL) ──────────────────────────────
+  // ─── Step 3: Allowed Roles / Users & Action Details ──────────────────────────
+  const [allowedSubjectType, setAllowedSubjectType] = useState<'ROLE' | 'USER'>('ROLE')
+  const [allowedRoles, setAllowedRoles] = useState<string[]>([])
+  const [allowedUsers, setAllowedUsers] = useState<string[]>([])
+
+  // Specific Action Configs:
+  // For Row-Level Filter Policy
+  const [filterColumn, setFilterColumn] = useState('')
+  const [filterOperator, setFilterOperator] = useState('EQ')
+  const [filterValue, setFilterValue] = useState('')
+
+  // For Data Masking Policy
+  const [selectedMaskColumns, setSelectedMaskColumns] = useState<string[]>([])
   const [targetColumn, setTargetColumn] = useState('EMAIL')
   const [maskType, setMaskType] = useState('HASH_SHA256')
   const [customMaskExpr, setCustomMaskExpr] = useState('SHA2(val, 256)')
-  const [filterColumn, setFilterColumn] = useState('REGION')
-  const [filterOperator, setFilterOperator] = useState('EQ')
-  const [filterValueType, setFilterValueType] = useState<'USER_ATTRIBUTE' | 'LITERAL'>('USER_ATTRIBUTE')
-  const [filterValue, setFilterValue] = useState('department')
-
-  // Exceptions / Circumstances
-  const [exemptRoles, setExemptRoles] = useState<string[]>([])
-  const [userAttrKey, setUserAttrKey] = useState('')
-  const [userAttrOp, setUserAttrOp] = useState('EQ')
-  const [userAttrVal, setUserAttrVal] = useState('')
 
   // ─── Step 4: Preview Simulation ──────────────────────────────────────────────
   const [previewResult, setPreviewResult] = useState<{
@@ -99,10 +114,24 @@ export default function PolicyStudioPage() {
   const [isSimulating, setIsSimulating] = useState(false)
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
-  const domains = useQuery({ queryKey: ['domains'], queryFn: () => metadataApi.domains() })
-  const products = useQuery({ queryKey: ['products', domainId], queryFn: () => metadataApi.products(domainId ? parseInt(domainId) : undefined), enabled: !!domainId })
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
   const roles = useQuery({ queryKey: ['roles'], queryFn: () => rbacApi.roles() })
+  const users = useQuery({ queryKey: ['users-list'], queryFn: () => rbacApi.users(1, 100) })
+
+  // Tables belonging to selected platforms
+  const tablesQuery = useQuery({
+    queryKey: ['tables-by-platforms', targetPlatforms],
+    queryFn: () => metadataApi.tablesByPlatforms(targetPlatforms.map(Number)),
+    enabled: targetPlatforms.length > 0,
+  })
+
+  // Columns belonging to selected tables
+  const columnsQuery = useQuery({
+    queryKey: ['columns-by-tables', selectedTables],
+    queryFn: () => metadataApi.columnsByTables(selectedTables.map(Number)),
+    enabled: selectedTables.length > 0,
+  })
+
   const existing = useQuery({
     queryKey: ['policy-detail', policyId],
     queryFn: () => policiesApi.get(policyId!),
@@ -117,8 +146,6 @@ export default function PolicyStudioPage() {
       setPolicyCode(p.policy_code || '')
       setDescription(p.description || '')
       setEnforceMode(p.enforce_mode === 'ENFORCED' ? 'ENFORCED' : 'ADVISORY')
-      setDomainId(p.domain_id ? String(p.domain_id) : null)
-      setProductId(p.product_id ? String(p.product_id) : null)
 
       if (p.target_platform_ids && Array.isArray(p.target_platform_ids)) {
         setTargetPlatforms(p.target_platform_ids.map(String))
@@ -130,36 +157,43 @@ export default function PolicyStudioPage() {
         const a = r.actions?.[0]
         if (a?.action_type === 'MASK_COLUMN') {
           setArchetype('DATA_MASKING')
-          setTargetColumn(a.filter_column || 'EMAIL')
+          if (a.filter_column) {
+            setTargetColumn(a.filter_column)
+            setSelectedMaskColumns([a.filter_column])
+          }
           setMaskType(a.mask_type || 'HASH_SHA256')
+          if (a.mask_expression) setCustomMaskExpr(a.mask_expression)
         } else if (a?.action_type === 'FILTER_ROWS') {
           setArchetype('ROW_FILTER')
-          setFilterColumn(a.filter_column || 'REGION')
-          setFilterValue(a.filter_value || 'department')
+          setFilterColumn(a.filter_column || '')
+          setFilterOperator(a.filter_operator || 'EQ')
+          setFilterValue(a.filter_value || '')
         } else {
           setArchetype('SUBSCRIPTION_ACCESS')
         }
 
-        const roleCodes = (r.subjects ?? []).map((s: any) => s.role_code).filter(Boolean)
-        setExemptRoles(roleCodes)
+        // Subjects: Roles or Users
+        const roleCodes = (r.subjects ?? []).filter((s: any) => s.subject_type === 'ROLE').map((s: any) => s.role_code).filter(Boolean)
+        const userIds = (r.subjects ?? []).filter((s: any) => s.subject_type === 'USER').map((s: any) => String(s.user_id)).filter(Boolean)
+
+        if (userIds.length > 0) {
+          setAllowedSubjectType('USER')
+          setAllowedUsers(userIds)
+        } else {
+          setAllowedSubjectType('ROLE')
+          setAllowedRoles(roleCodes)
+        }
+
+        // Resources: Tables
+        const tids = (r.resources ?? []).filter((res: any) => res.table_id).map((res: any) => String(res.table_id))
+        if (tids.length > 0) {
+          setSelectedTables(tids)
+        }
       }
     }
   }, [isEditing, existing.data])
 
-  // Extract query options with deduplication to prevent Mantine MultiSelect key collisions
-  const roleOptions = useMemo(() => {
-    const raw = roles.data?.data ?? (Array.isArray(roles.data) ? roles.data : [])
-    const seen = new Set<string>()
-    const opts: { value: string; label: string }[] = []
-    raw.forEach((r: any) => {
-      if (r?.role_code && !seen.has(r.role_code)) {
-        seen.add(r.role_code)
-        opts.push({ value: r.role_code, label: `${r.role_name} (${r.role_code})` })
-      }
-    })
-    return opts
-  }, [roles.data])
-
+  // Options memoization
   const platformOptions = useMemo(() => {
     const raw = platforms.data?.data ?? (Array.isArray(platforms.data) ? platforms.data : [])
     const seen = new Set<string>()
@@ -174,31 +208,118 @@ export default function PolicyStudioPage() {
     return opts
   }, [platforms.data])
 
-  // ─── Live Natural Language Summary Builder (CES DSL) ──────────────────────
+  const availableTables = useMemo(() => {
+    return tablesQuery.data?.data ?? []
+  }, [tablesQuery.data])
+
+  const tableOptions = useMemo(() => {
+    return availableTables.map((t: any) => ({
+      value: String(t.table_id),
+      label: `${t.database_name}.${t.schema_name}.${t.table_name} (${t.platform_code || t.platform_name})`,
+    }))
+  }, [availableTables])
+
+  const availableColumns = useMemo(() => {
+    return columnsQuery.data?.data ?? []
+  }, [columnsQuery.data])
+
+  const columnOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const opts: { value: string; label: string }[] = []
+    availableColumns.forEach((c: any) => {
+      const name = c.column_name
+      if (name && !seen.has(name)) {
+        seen.add(name)
+        opts.push({
+          value: name,
+          label: `${name} (${c.data_type || c.normalized_type || 'TEXT'})`,
+        })
+      }
+    })
+    return opts
+  }, [availableColumns])
+
+  const roleOptions = useMemo(() => {
+    const raw = roles.data?.data ?? (Array.isArray(roles.data) ? roles.data : [])
+    const seen = new Set<string>()
+    const opts: { value: string; label: string }[] = []
+    raw.forEach((r: any) => {
+      if (r?.role_code && !seen.has(r.role_code)) {
+        seen.add(r.role_code)
+        opts.push({ value: r.role_code, label: `${r.role_name} (${r.role_code})` })
+      }
+    })
+    return opts
+  }, [roles.data])
+
+  const rawUsers = useMemo(() => {
+    const d = users.data?.data
+    if (Array.isArray(d)) return d
+    if (d?.items && Array.isArray(d.items)) return d.items
+    return []
+  }, [users.data])
+
+  const userOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const opts: { value: string; label: string }[] = []
+    rawUsers.forEach((u: any) => {
+      const val = String(u.user_id)
+      if (val && !seen.has(val)) {
+        seen.add(val)
+        opts.push({
+          value: val,
+          label: `${u.display_name || u.username} (${u.email || u.username})`,
+        })
+      }
+    })
+    return opts
+  }, [rawUsers])
+
+  // Automatically update default filter column or mask column when columns are fetched
+  useEffect(() => {
+    if (columnOptions.length > 0) {
+      if (!filterColumn) {
+        setFilterColumn(columnOptions[0].value)
+      }
+      if (selectedMaskColumns.length === 0) {
+        // Look for sensitive candidates like EMAIL, SSN, PHONE
+        const sensitive = columnOptions.find((c) => /email|ssn|phone|card|balance/i.test(c.value))
+        setSelectedMaskColumns([sensitive ? sensitive.value : columnOptions[0].value])
+      }
+    }
+  }, [columnOptions])
+
+  // ─── Live Natural Language Summary Builder ─────────────────────────────────
   const naturalLanguageText = useMemo(() => {
-    const targetScopeStr = targetPlatforms.length
-      ? `selected platforms [${targetPlatforms.join(', ')}]`
-      : 'all connected data platforms'
+    const targetScopeStr = selectedTables.length
+      ? `${selectedTables.length} selected table(s)`
+      : targetPlatforms.length
+        ? `all tables in [${targetPlatforms.length} platform(s)]`
+        : 'all connected data platforms'
 
-    const exemptions: string[] = []
-    if (exemptRoles.length) exemptions.push(`have role [${exemptRoles.join(', ')}]`)
-    if (userAttrKey && userAttrVal) exemptions.push(`user attribute @user.${userAttrKey} ${userAttrOp} '${userAttrVal}'`)
+    const subjectsStr = allowedSubjectType === 'ROLE'
+      ? (allowedRoles.length ? `Groups [${allowedRoles.join(', ')}]` : 'selected identity groups')
+      : (allowedUsers.length
+        ? `Users [${allowedUsers.map((uid) => rawUsers.find((u: any) => String(u.user_id) === uid)?.username || uid).join(', ')}]`
+        : 'selected individual users')
 
-    const exemptClause = exemptions.length ? ` for everyone EXCEPT users who ${exemptions.join(' OR ')}` : ''
-
-    if (archetype === 'DATA_MASKING') {
-      const maskLabel = MASKING_TECHNIQUES.find((m) => m.value === maskType)?.label || maskType
-      return `Mask values in column '${targetColumn}' across ${targetScopeStr} using ${maskLabel}${exemptClause}.`
+    if (archetype === 'SUBSCRIPTION_ACCESS') {
+      return `Grant query SELECT table access on ${targetScopeStr} to allowed ${subjectsStr}.`
     }
     if (archetype === 'ROW_FILTER') {
-      const valStr = filterValueType === 'USER_ATTRIBUTE' ? `@user.${filterValue}` : `'${filterValue}'`
-      return `Only show rows where ${filterColumn} ${filterOperator} ${valStr} across ${targetScopeStr}${exemptClause}.`
+      const opLabel = FILTER_OPERATORS.find((o) => o.value === filterOperator)?.label || filterOperator
+      const valStr = filterValue ? `'${filterValue}'` : '[value]'
+      return `Filter rows in ${targetScopeStr} where column '${filterColumn || 'COLUMN'}' ${opLabel} ${valStr} for allowed ${subjectsStr}.`
     }
-    return `Grant query access across ${targetScopeStr} to users who ${exemptions.length ? exemptions.join(' OR ') : 'are authenticated'}.`
+    if (archetype === 'DATA_MASKING') {
+      const maskLabel = MASKING_TECHNIQUES.find((m) => m.value === maskType)?.label || maskType
+      const cols = selectedMaskColumns.length ? selectedMaskColumns.join(', ') : targetColumn || 'sensitive columns'
+      return `Mask column(s) [${cols}] in ${targetScopeStr} using ${maskLabel} for allowed ${subjectsStr}.`
+    }
+    return 'Universal policy specification.'
   }, [
-    archetype, targetPlatforms, targetColumn, maskType,
-    filterColumn, filterOperator, filterValueType, filterValue,
-    exemptRoles, userAttrKey, userAttrOp, userAttrVal,
+    archetype, selectedTables, targetPlatforms, allowedSubjectType, allowedRoles, allowedUsers,
+    filterColumn, filterOperator, filterValue, selectedMaskColumns, targetColumn, maskType, rawUsers,
   ])
 
   // Build draft payload for preview compilation and saving
@@ -209,57 +330,85 @@ export default function PolicyStudioPage() {
         ? 'FILTER_ROWS'
         : 'GRANT_SELECT'
 
-    const conditions: any[] = []
-    if (userAttrKey && userAttrVal) {
-      conditions.push({ attribute_key: userAttrKey, operator: userAttrOp, compare_value: userAttrVal })
+    const subjects: any[] = []
+    if (allowedSubjectType === 'ROLE') {
+      allowedRoles.forEach((rCode) => {
+        const raw = roles.data?.data ?? (Array.isArray(roles.data) ? roles.data : [])
+        const matched = raw.find((r: any) => r.role_code === rCode)
+        subjects.push({
+          subject_type: 'ROLE',
+          role_code: rCode,
+          role_id: matched?.role_id ?? 1,
+        })
+      })
+    } else {
+      allowedUsers.forEach((uidStr) => {
+        const uid = parseInt(uidStr)
+        const matched = rawUsers.find((u: any) => u.user_id === uid)
+        subjects.push({
+          subject_type: 'USER',
+          user_id: uid,
+          username: matched?.username || `user_${uid}`,
+          display_name: matched?.display_name || matched?.username,
+        })
+      })
     }
 
-    const subjects = exemptRoles.map((rCode) => {
-      const raw = roles.data?.data ?? (Array.isArray(roles.data) ? roles.data : [])
-      const matched = raw.find((r: any) => r.role_code === rCode)
-      return {
-        subject_type: 'ROLE',
-        role_code: rCode,
-        role_id: matched?.role_id ?? 1,
-      }
-    })
+    const maskColsStr = selectedMaskColumns.join(', ') || targetColumn
 
     const actions = [{
       action_type: actionType,
       mask_type: archetype === 'DATA_MASKING' ? maskType : undefined,
       mask_expression: archetype === 'DATA_MASKING' && maskType === 'CUSTOM' ? customMaskExpr : undefined,
-      filter_column: archetype === 'DATA_MASKING' ? targetColumn : archetype === 'ROW_FILTER' ? filterColumn : undefined,
+      filter_column: archetype === 'DATA_MASKING' ? maskColsStr : archetype === 'ROW_FILTER' ? filterColumn : undefined,
       filter_operator: archetype === 'ROW_FILTER' ? filterOperator : undefined,
-      filter_value_type: archetype === 'ROW_FILTER' ? filterValueType : undefined,
+      filter_value_type: 'LITERAL',
       filter_value: archetype === 'ROW_FILTER' ? filterValue : undefined,
     }]
 
-    const resources = targetPlatforms.map((pid) => ({
-      platform_id: parseInt(pid),
-      resource_scope: 'PLATFORM',
-    }))
+    const resources = selectedTables.map((tidStr) => {
+      const tid = parseInt(tidStr)
+      const t = availableTables.find((tbl: any) => tbl.table_id === tid)
+      return {
+        platform_id: t?.platform_id || (targetPlatforms[0] ? parseInt(targetPlatforms[0]) : 1),
+        database_id: t?.database_id,
+        schema_id: t?.schema_id,
+        table_id: tid,
+        database_name: t?.database_name,
+        schema_name: t?.schema_name,
+        table_name: t?.table_name,
+        resource_scope: 'TABLE',
+      }
+    })
+
+    if (resources.length === 0) {
+      targetPlatforms.forEach((pid) => {
+        resources.push({
+          platform_id: parseInt(pid),
+          resource_scope: 'PLATFORM',
+        } as any)
+      })
+    }
 
     return {
-      policy_name: policyName.trim() || 'CES Global Security Policy',
-      policy_code: policyCode.trim() || 'GLOBAL_SECURITY_POLICY',
-      description: description.trim() || 'Global data protection and masking policy configured via CES Policy Builder.',
+      policy_name: policyName.trim() || 'CES Security Policy',
+      policy_code: policyCode.trim() || 'POLICY_SEC_DEFAULT',
+      description: description.trim() || 'Central entitlement policy configured via CES Policy Studio.',
       enforce_mode: enforceMode,
-      domain_id: domainId ? parseInt(domainId) : undefined,
-      product_id: productId ? parseInt(productId) : undefined,
       target_platform_ids: targetPlatforms.map(Number),
       rules: [{
-        rule_name: `${archetype} Global Rule`,
+        rule_name: `${archetype} Rule`,
         rule_type: 'COMBINED',
         effect: 'ALLOW',
         subjects,
         actions,
-        conditions,
+        conditions: [],
         resources,
       }],
     }
   }
 
-  // Trigger preview compilation — calls backend for OPA Rego and connectors directly for native DDL
+  // Trigger preview compilation
   const handleSimulateCompiler = async () => {
     setIsSimulating(true)
     try {
@@ -269,7 +418,7 @@ export default function PolicyStudioPage() {
       const backendResp = await policiesApi.previewCompile(draft)
       const baseResult = backendResp.data || {}
 
-      // 2. Fetch Snowflake DDL directly from Snowflake Connector via Edge Gateway
+      // 2. Fetch Snowflake DDL directly from Snowflake Connector
       let snowflakeSql = '-- Snowflake compilation pending...'
       try {
         const sfResp = await connectorApi.compileSnowflake(draft)
@@ -278,7 +427,7 @@ export default function PolicyStudioPage() {
         snowflakeSql = `-- Snowflake Connector Note: ${sfErr?.response?.data?.detail || sfErr.message || 'Direct connector call failed'}`
       }
 
-      // 3. Fetch Redshift DDL directly from Redshift Connector via Edge Gateway
+      // 3. Fetch Redshift DDL directly from Redshift Connector
       let redshiftSql = '-- Redshift compilation pending...'
       try {
         const rsResp = await connectorApi.compileRedshift(draft)
@@ -313,11 +462,11 @@ export default function PolicyStudioPage() {
   // Save Mutation
   const saveMutation = useMutation({
     mutationFn: (draft: any) => isEditing ? policiesApi.update(policyId!, draft) : policiesApi.create(draft),
-    onSuccess: (res) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       notifications.show({
-        title: 'Global Policy Created',
-        message: `Policy ${policyCode} saved successfully!`,
+        title: 'Policy Saved Successfully',
+        message: `Policy ${policyCode} has been saved!`,
         color: 'teal',
         icon: <IconCheck size={16} />,
       })
@@ -332,13 +481,23 @@ export default function PolicyStudioPage() {
     },
   })
 
+  // Validation rules
   const isStep1Valid = policyName.trim().length >= 3 && policyCode.trim().length >= 3
-  const isStep2Valid = targetPlatforms.length > 0
-  const isStep3Valid = archetype === 'DATA_MASKING'
-    ? Boolean(targetColumn.trim().length >= 2 && (maskType !== 'CUSTOM' || customMaskExpr.trim().length >= 3))
-    : archetype === 'ROW_FILTER'
-      ? Boolean(filterColumn.trim().length >= 2 && filterValue.trim().length >= 1)
-      : Boolean(exemptRoles.length > 0 || (userAttrKey.trim().length > 0 && userAttrVal.trim().length > 0))
+  const isStep2Valid = targetPlatforms.length > 0 && selectedTables.length > 0
+
+  const hasAllowedSubject = allowedSubjectType === 'ROLE'
+    ? allowedRoles.length > 0
+    : allowedUsers.length > 0
+
+  const isStep3Valid = Boolean(
+    hasAllowedSubject && (
+      archetype === 'SUBSCRIPTION_ACCESS'
+        ? true
+        : archetype === 'ROW_FILTER'
+          ? (filterColumn.trim().length >= 1 && filterValue.trim().length >= 1)
+          : (selectedMaskColumns.length > 0 && (maskType !== 'CUSTOM' || customMaskExpr.trim().length >= 3))
+    )
+  )
 
   const handleStepClick = (target: number) => {
     if (target === 1 && !isStep1Valid) return
@@ -356,18 +515,18 @@ export default function PolicyStudioPage() {
             <Button variant="subtle" size="xs" color="gray" leftSection={<IconArrowLeft size={14} />} onClick={() => navigate('/policies')}>
               Back to Policies
             </Button>
-            <Badge color="violet" variant="filled" size="sm">CES Global Policy Engine</Badge>
+            <Badge color="indigo" variant="filled" size="sm">CES Policy Studio</Badge>
           </Group>
           <Title order={2} mt={4}>
-            {isEditing ? `Edit Global Policy: ${policyName}` : 'CES Global Policy Builder'}
+            {isEditing ? `Edit Policy: ${policyName}` : 'Create Entitlement Policy'}
           </Title>
           <Text c="dimmed" size="sm">
-            Compose universal data masking, row-level access control, and subscription policies across all connected cloud platforms.
+            Simple, straight-forward policy creation across your cloud platforms, tables, and identities.
           </Text>
         </Box>
         <Group>
           <Button
-            color="violet"
+            color="indigo"
             leftSection={<IconSend size={16} />}
             loading={saveMutation.isPending}
             disabled={!isStep1Valid || !isStep2Valid || !isStep3Valid}
@@ -378,8 +537,8 @@ export default function PolicyStudioPage() {
         </Group>
       </Group>
 
-      {/* ── Live Natural Language Sentence Summary Banner ───────────────────── */}
-      <Paper p="md" radius="md" className="banner-panel">
+      {/* ── Live Plain English Rule Definition Banner ───────────────────────── */}
+      <Paper p="md" radius="md" className="banner-panel" withBorder>
         <Group align="flex-start" gap="sm">
           <ThemeIcon color="indigo" variant="light" size="lg" radius="md">
             <IconSparkles size={20} />
@@ -387,7 +546,7 @@ export default function PolicyStudioPage() {
           <Box style={{ flex: 1 }}>
             <Group justify="space-between" mb={2}>
               <Text size="xs" fw={700} tt="uppercase" c="indigo">
-                CES Plain English Rule Definition
+                Plain English Entitlement Definition
               </Text>
               <Badge size="xs" color={enforceMode === 'ENFORCED' ? 'teal' : 'yellow'} variant="light">
                 {enforceMode}
@@ -402,19 +561,19 @@ export default function PolicyStudioPage() {
 
       {/* ── Stepper Navigation ────────────────────────────────────────────────── */}
       <Stepper active={activeStep} onStepClick={handleStepClick} color="indigo" radius="md">
-        <Stepper.Step label="1. Policy Archetype" description="Intent & metadata" />
-        <Stepper.Step label="2. Target Scope" description="Platforms & products" />
-        <Stepper.Step label="3. Rule & Exceptions" description="CES Action / Circumstance" />
-        <Stepper.Step label="4. Live DDL Simulator" description="Snowflake, Redshift & OPA" />
+        <Stepper.Step label="1. Policy Type" description="Select type & name" />
+        <Stepper.Step label="2. Platforms & Tables" description="Target scope" />
+        <Stepper.Step label="3. Actions & Allowed Subjects" description="Rules, groups & users" />
+        <Stepper.Step label="4. Review & DDL Simulation" description="Multi-cloud SQL preview" />
       </Stepper>
 
-      {/* ── STEP 1: Policy Meta & Archetype Selector ─────────────────────────── */}
+      {/* ── STEP 1: Policy Archetype & Meta ──────────────────────────────────── */}
       {activeStep === 0 && (
         <Stack gap="lg">
           <Card withBorder p="lg" radius="md">
-            <Title order={4} mb="xs">Select Policy Archetype</Title>
+            <Title order={4} mb="xs">Select Policy Type</Title>
             <Text size="sm" c="dimmed" mb="lg">
-              CES Global Policies are categorized into three core security primitives.
+              Choose one of the three standard security and entitlement types:
             </Text>
 
             <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
@@ -431,6 +590,7 @@ export default function PolicyStudioPage() {
                     style={{
                       cursor: 'pointer',
                       borderColor: isSelected ? 'var(--mantine-color-indigo-6)' : undefined,
+                      borderWidth: isSelected ? 2 : 1,
                       backgroundColor: isSelected ? 'var(--nav-active-bg)' : 'transparent',
                       transition: 'all 0.2s ease',
                     }}
@@ -455,7 +615,13 @@ export default function PolicyStudioPage() {
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
               <TextInput
                 label="Policy Name"
-                placeholder="e.g. Global PII Email Masking"
+                placeholder={
+                  archetype === 'SUBSCRIPTION_ACCESS'
+                    ? 'e.g. Finance Reporting Tables Subscription'
+                    : archetype === 'ROW_FILTER'
+                      ? 'e.g. US Region Row Visibility Filter'
+                      : 'e.g. Customer Email PII Masking'
+                }
                 required
                 error={!isStep1Valid && policyName.length > 0 ? 'Policy Name required (min 3 chars)' : undefined}
                 value={policyName}
@@ -463,7 +629,13 @@ export default function PolicyStudioPage() {
               />
               <TextInput
                 label="Policy Identifier Code"
-                placeholder="e.g. GLOBAL_MASK_PII_EMAIL"
+                placeholder={
+                  archetype === 'SUBSCRIPTION_ACCESS'
+                    ? 'e.g. POLICY_SUB_FINANCE_TABLES'
+                    : archetype === 'ROW_FILTER'
+                      ? 'e.g. POLICY_ROW_FILTER_US'
+                      : 'e.g. POLICY_MASK_CUSTOMER_EMAIL'
+                }
                 required
                 error={!isStep1Valid && policyCode.length > 0 ? 'Code required (min 3 chars)' : undefined}
                 value={policyCode}
@@ -472,8 +644,8 @@ export default function PolicyStudioPage() {
             </SimpleGrid>
 
             <Textarea
-              label="Business Context & Mandate Description"
-              placeholder="Explain GDPR, HIPAA, or corporate data privacy mandate..."
+              label="Policy Description"
+              placeholder="Brief description of the business justification and access requirements..."
               minRows={2}
               mt="md"
               value={description}
@@ -491,7 +663,7 @@ export default function PolicyStudioPage() {
               </Box>
               <Switch
                 size="md"
-                color="violet"
+                color="indigo"
                 checked={enforceMode === 'ENFORCED'}
                 onChange={(e) => setEnforceMode(e.currentTarget.checked ? 'ENFORCED' : 'ADVISORY')}
                 label={enforceMode}
@@ -501,214 +673,303 @@ export default function PolicyStudioPage() {
 
           <Group justify="flex-end">
             <Button
-              color="violet"
+              color="indigo"
               rightSection={<IconArrowRight size={16} />}
               disabled={!isStep1Valid}
               onClick={() => setActiveStep(1)}
             >
-              Continue to Scope & Triggers
+              Continue to Platforms & Tables
             </Button>
           </Group>
         </Stack>
       )}
 
-      {/* ── STEP 2: Platform Scope & Triggers ──────────────────────────── */}
+      {/* ── STEP 2: Platforms & Tables Scope ─────────────────────────────────── */}
       {activeStep === 1 && (
         <Stack gap="lg">
           <Card withBorder p="lg" radius="md">
-            <Title order={4} mb="xs">Target Platform & Asset Scope</Title>
-            <Text size="sm" c="dimmed" mb="md">
-              Designate which connected cloud platforms, business domains, or specific data products this policy applies to.
-            </Text>
+            <Group justify="space-between" mb="xs">
+              <Box>
+                <Title order={4}>Choose Data Platforms & Tables</Title>
+                <Text size="sm" c="dimmed">
+                  Select the cloud platforms, then choose the specific tables to apply this policy to.
+                </Text>
+              </Box>
+              <Badge color="indigo" variant="light">Straightforward Asset Scope</Badge>
+            </Group>
 
-            <Stack gap="md">
+            <Stack gap="md" mt="md">
               <MultiSelect
-                label="Designated Cloud Platforms"
-                placeholder="Select Platforms (Snowflake, AWS Redshift, PostgreSQL)"
+                label="1. Designated Data Platforms"
+                description="Select one or more connected platforms (Snowflake, AWS Redshift, PostgreSQL)"
+                placeholder="Choose Platforms..."
                 data={platformOptions}
                 value={targetPlatforms}
-                onChange={setTargetPlatforms}
+                onChange={(vals) => {
+                  setTargetPlatforms(vals)
+                  // Clear selected tables that no longer belong to selected platforms
+                  setSelectedTables([])
+                }}
                 searchable
                 clearable
                 required
               />
-              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                <Select
-                  label="Data Domain (Optional)"
-                  placeholder="All Domains"
-                  data={(domains.data?.data ?? []).map((d: any) => ({ value: String(d.domain_id), label: d.domain_name }))}
-                  value={domainId}
-                  onChange={setDomainId}
-                  clearable
-                />
-                <Select
-                  label="Data Product (Optional)"
-                  placeholder="All Data Products"
-                  data={(products.data?.data ?? []).map((pr: any) => ({ value: String(pr.product_id), label: pr.product_name }))}
-                  value={productId}
-                  onChange={setProductId}
-                  clearable
-                />
-              </SimpleGrid>
+
+              {targetPlatforms.length > 0 ? (
+                <Box>
+                  <MultiSelect
+                    label="2. Tables Belonging to Chosen Platforms"
+                    description="Select the tables to apply this policy to"
+                    placeholder={
+                      tablesQuery.isLoading
+                        ? 'Loading platform tables...'
+                        : tableOptions.length === 0
+                          ? 'No tables found for chosen platforms'
+                          : 'Select tables (e.g. FINANCE_DB.PUBLIC.CUSTOMER_PROFILES)...'
+                    }
+                    data={tableOptions}
+                    value={selectedTables}
+                    onChange={setSelectedTables}
+                    searchable
+                    clearable
+                    required
+                    leftSection={<IconTable size={16} />}
+                    rightSection={tablesQuery.isLoading ? <Loader size="xs" /> : null}
+                  />
+                  {selectedTables.length > 0 && (
+                    <Paper p="xs" mt="xs" withBorder radius="sm" style={{ backgroundColor: 'var(--mantine-color-indigo-0)' }}>
+                      <Group justify="space-between">
+                        <Text size="xs" fw={600}>Selected Tables ({selectedTables.length}):</Text>
+                        <Badge size="xs" color="indigo">{selectedTables.length} table(s) targeted</Badge>
+                      </Group>
+                    </Paper>
+                  )}
+                </Box>
+              ) : (
+                <Alert color="blue" variant="light" icon={<IconTable size={16} />}>
+                  <Text size="xs">
+                    Please select at least one Data Platform above to view and choose its tables.
+                  </Text>
+                </Alert>
+              )}
             </Stack>
           </Card>
 
           <Group justify="space-between">
             <Button variant="default" onClick={() => setActiveStep(0)}>Back</Button>
             <Button
-              color="violet"
+              color="indigo"
               rightSection={<IconArrowRight size={16} />}
               disabled={!isStep2Valid}
               onClick={() => setActiveStep(2)}
             >
-              Continue to Action & Circumstances
+              Continue to Action & Allowed Subjects
             </Button>
           </Group>
         </Stack>
       )}
 
-      {/* ── STEP 3: Action & Circumstance Composer ───────────────────────────── */}
+      {/* ── STEP 3: Action Details & Allowed Roles / Users ───────────────────── */}
       {activeStep === 2 && (
         <Stack gap="lg">
-          {/* Action Configuration Card */}
+          {/* Card A: Allowed Roles or Users */}
           <Card withBorder p="lg" radius="md">
-            <Group gap="xs" mb="sm">
-              <ThemeIcon color="violet" variant="light" size="md"><IconTarget size={18} /></ThemeIcon>
-              <Title order={4}>Step 3A: Configure Action</Title>
+            <Group justify="space-between" mb="xs">
+              <Box>
+                <Title order={4}>Apply Policy To: Allowed Groups or Users</Title>
+                <Text size="sm" c="dimmed">
+                  Choose whether this policy applies to identity groups or specific individual users.
+                </Text>
+              </Box>
+              <SegmentedControl
+                value={allowedSubjectType}
+                onChange={(val) => setAllowedSubjectType(val as 'ROLE' | 'USER')}
+                data={[
+                  { label: '👥 Identity Groups', value: 'ROLE' },
+                  { label: '👤 Specific Users', value: 'USER' },
+                ]}
+                color="indigo"
+              />
             </Group>
 
-            {archetype === 'DATA_MASKING' && (
-              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                <TextInput
-                  label="Target Column Name / Pattern"
-                  placeholder="e.g. EMAIL, SSN, PHONE_NUMBER"
+            <Stack gap="md" mt="md">
+              {allowedSubjectType === 'ROLE' ? (
+                <MultiSelect
+                  label="Allowed Identity Groups"
+                  description="Members of these groups will have this policy applied / be granted access"
+                  placeholder="Select Identity Groups (e.g. ROLE_ANALYST, FINANCE_ANALYST)..."
+                  data={roleOptions}
+                  value={allowedRoles}
+                  onChange={setAllowedRoles}
+                  searchable
+                  clearable
                   required
-                  value={targetColumn}
-                  onChange={(e) => setTargetColumn(e.target.value)}
+                  leftSection={<IconUsers size={16} />}
                 />
-                <Select
-                  label="Masking Technique"
-                  data={MASKING_TECHNIQUES}
-                  value={maskType}
-                  onChange={(val) => val && setMaskType(val)}
-                />
-                {maskType === 'CUSTOM' && (
-                  <Box style={{ gridColumn: 'span 2' }}>
-                    <TextInput
-                      label="Custom SQL Mask Expression"
-                      placeholder="e.g. REGEXP_REPLACE(val, '(.)', '*')"
-                      value={customMaskExpr}
-                      onChange={(e) => setCustomMaskExpr(e.target.value)}
-                    />
-                  </Box>
-                )}
-              </SimpleGrid>
-            )}
-
-            {archetype === 'ROW_FILTER' && (
-              <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
-                <TextInput
-                  label="Filter Column"
-                  placeholder="e.g. REGION, DEPARTMENT, COUNTRY"
+              ) : (
+                <MultiSelect
+                  label="Allowed Users"
+                  description="These specific user accounts will have this policy applied / be granted access"
+                  placeholder="Select Users (e.g. alice.chen, frank.nguyen)..."
+                  data={userOptions}
+                  value={allowedUsers}
+                  onChange={setAllowedUsers}
+                  searchable
+                  clearable
                   required
-                  value={filterColumn}
-                  onChange={(e) => setFilterColumn(e.target.value)}
+                  leftSection={<IconUser size={16} />}
                 />
-                <Select
-                  label="Operator"
-                  data={[
-                    { value: 'EQ', label: 'Equals (=)' },
-                    { value: 'NEQ', label: 'Not Equals (!=)' },
-                    { value: 'IN', label: 'In List (IN)' },
-                    { value: 'CONTAINS', label: 'Contains (LIKE)' },
-                    { value: 'GTE', label: 'Greater Than or Equal (>=)' },
-                  ]}
-                  value={filterOperator}
-                  onChange={(val) => val && setFilterOperator(val)}
-                />
-                <TextInput
-                  label="Dynamic User Attribute Match"
-                  placeholder="e.g. department, region, clearance_level"
-                  required
-                  value={filterValue}
-                  onChange={(e) => setFilterValue(e.target.value)}
-                />
-              </SimpleGrid>
-            )}
-
-            {archetype === 'SUBSCRIPTION_ACCESS' && (
-              <Alert color="teal" icon={<IconUserCheck />}>
-                Subscription Policy grants query SELECT authorization to designated roles.
-              </Alert>
-            )}
+              )}
+            </Stack>
           </Card>
 
-          {/* CES Circumstance / Exception Engine Card */}
+          {/* Card B: Action Specification per Policy Type */}
           <Card withBorder p="lg" radius="md">
-            <Group gap="xs" mb="xs">
-              <ThemeIcon color="orange" variant="light" size="md"><IconShieldLock size={18} /></ThemeIcon>
-              <Title order={4}>Step 3B: Circumstances & Exemptions</Title>
+            <Group gap="xs" mb="sm">
+              <ThemeIcon color="indigo" variant="light" size="md">
+                <IconChecklist size={18} />
+              </ThemeIcon>
+              <Title order={4}>
+                {archetype === 'SUBSCRIPTION_ACCESS' && '1. Data Subscription Configuration'}
+                {archetype === 'ROW_FILTER' && '2. Row-Level Filter Specification'}
+                {archetype === 'DATA_MASKING' && '3. Data Masking Specification'}
+              </Title>
             </Group>
-            <Text size="sm" c="dimmed" mb="md">
-              Specify who is exempt from this policy: <Text span fw={600} c="indigo">"FOR EVERYONE EXCEPT users who..."</Text>
-            </Text>
 
-            <Stack gap="md">
-              <MultiSelect
-                label="Exempt Roles"
-                description="Users who belong to these roles will see unmasked data or bypass row restrictions"
-                placeholder="Select Roles (e.g. DATA_ADMIN, COMPLIANCE_OFFICER, AUDITOR)"
-                data={roleOptions}
-                value={exemptRoles}
-                onChange={setExemptRoles}
-                searchable
-                clearable
-              />
+            {/* 1. Data Subscription Policy Action */}
+            {archetype === 'SUBSCRIPTION_ACCESS' && (
+              <Stack gap="sm">
+                <Alert color="teal" variant="light" icon={<IconKey size={18} />}>
+                  <Text size="sm" fw={600}>Table-Level Subscription Grant</Text>
+                  <Text size="xs" mt={2}>
+                    This subscription policy automatically generates native <code>GRANT SELECT</code> privileges on all {selectedTables.length} selected table(s) for the designated {allowedSubjectType === 'ROLE' ? `${allowedRoles.length} allowed group(s)` : `${allowedUsers.length} allowed user(s)`}.
+                  </Text>
+                </Alert>
+                <Paper p="sm" withBorder radius="sm">
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">Permission Level:</Text>
+                    <Badge color="teal">SELECT (Query & Read Access)</Badge>
+                  </Group>
+                  <Group justify="space-between" mt={4}>
+                    <Text size="xs" c="dimmed">Target Scope:</Text>
+                    <Text size="xs" fw={600}>{selectedTables.length} table(s) across {targetPlatforms.length} platform(s)</Text>
+                  </Group>
+                </Paper>
+              </Stack>
+            )}
 
-              <Divider label="Optional Attribute-Based Exception" labelPosition="center" my="xs" />
+            {/* 2. Row-Level Filter Policy Action */}
+            {archetype === 'ROW_FILTER' && (
+              <Stack gap="md">
+                <Text size="sm" c="dimmed">
+                  Choose a column belonging to the selected table(s). Rows matching the operator and value will be filtered.
+                </Text>
 
-              <Group grow>
-                <TextInput
-                  label="User Attribute Key"
-                  placeholder="e.g. clearance_level"
-                  value={userAttrKey}
-                  onChange={(e) => setUserAttrKey(e.target.value)}
-                />
-                <Select
-                  label="Operator"
-                  data={[
-                    { value: 'EQ', label: 'Equals (=)' },
-                    { value: 'GTE', label: 'Greater Than or Equal (>=)' },
-                    { value: 'IN', label: 'In List' },
-                  ]}
-                  value={userAttrOp}
-                  onChange={(val) => val && setUserAttrOp(val)}
-                />
-                <TextInput
-                  label="Required Value"
-                  placeholder="e.g. CONFIDENTIAL"
-                  value={userAttrVal}
-                  onChange={(e) => setUserAttrVal(e.target.value)}
-                />
-              </Group>
-            </Stack>
+                <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+                  <Select
+                    label="Filter Column"
+                    description="Column from selected tables"
+                    placeholder={columnOptions.length ? 'Select column...' : 'Enter column name'}
+                    data={columnOptions}
+                    value={filterColumn}
+                    onChange={(val) => val && setFilterColumn(val)}
+                    searchable
+                    required
+                    leftSection={<IconColumns size={16} />}
+                  />
+                  <Select
+                    label="Filter Operator"
+                    description="Comparison condition"
+                    data={FILTER_OPERATORS}
+                    value={filterOperator}
+                    onChange={(val) => val && setFilterOperator(val)}
+                    required
+                  />
+                  <TextInput
+                    label="Filter Value"
+                    description="Value to filter against"
+                    placeholder="e.g. US_WEST or 1000 or ACTIVE"
+                    required
+                    value={filterValue}
+                    onChange={(e) => setFilterValue(e.target.value)}
+                  />
+                </SimpleGrid>
+
+                <Paper p="xs" withBorder radius="sm" style={{ backgroundColor: 'var(--mantine-color-blue-0)' }}>
+                  <Text size="xs" fw={600}>
+                    Active Filter Rule: <code>{filterColumn || 'COLUMN'} {filterOperator} '{filterValue || 'VALUE'}'</code>
+                  </Text>
+                  <Text size="11px" c="dimmed" mt={2}>
+                    Query results on target tables will only expose records matching this criterion for allowed subjects.
+                  </Text>
+                </Paper>
+              </Stack>
+            )}
+
+            {/* 3. Data Masking Policy Action */}
+            {archetype === 'DATA_MASKING' && (
+              <Stack gap="md">
+                <Text size="sm" c="dimmed">
+                  Choose the sensitive columns belonging to the selected tables and the masking technique to apply.
+                </Text>
+
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                  <MultiSelect
+                    label="Target Column(s) to Mask"
+                    description="Columns from selected tables"
+                    placeholder={columnOptions.length ? 'Select column(s) to mask...' : 'Enter column name'}
+                    data={columnOptions}
+                    value={selectedMaskColumns}
+                    onChange={setSelectedMaskColumns}
+                    searchable
+                    clearable
+                    required
+                    leftSection={<IconColumns size={16} />}
+                  />
+
+                  <Select
+                    label="Masking Technique"
+                    description="Obfuscation method applied to values"
+                    data={MASKING_TECHNIQUES}
+                    value={maskType}
+                    onChange={(val) => val && setMaskType(val)}
+                    required
+                  />
+                </SimpleGrid>
+
+                {maskType === 'CUSTOM' && (
+                  <TextInput
+                    label="Custom SQL Mask Expression"
+                    placeholder="e.g. REGEXP_REPLACE(val, '(.)', '*')"
+                    value={customMaskExpr}
+                    onChange={(e) => setCustomMaskExpr(e.target.value)}
+                  />
+                )}
+
+                <Paper p="xs" withBorder radius="sm" style={{ backgroundColor: 'var(--mantine-color-violet-0)' }}>
+                  <Text size="xs" fw={600}>
+                    Masking Summary: [{selectedMaskColumns.join(', ') || 'No columns selected'}] → {MASKING_TECHNIQUES.find((m) => m.value === maskType)?.label}
+                  </Text>
+                </Paper>
+              </Stack>
+            )}
           </Card>
 
           <Group justify="space-between">
             <Button variant="default" onClick={() => setActiveStep(1)}>Back</Button>
             <Button
-              color="violet"
+              color="indigo"
               rightSection={<IconArrowRight size={16} />}
               disabled={!isStep3Valid}
               onClick={() => setActiveStep(3)}
             >
-              Simulate Multi-Engine DDL
+              Review & Simulate Multi-Engine DDL
             </Button>
           </Group>
         </Stack>
       )}
 
-      {/* ── STEP 4: Multi-Engine Live Compiler Simulation ────────────────────── */}
+      {/* ── STEP 4: Review & Live DDL Simulator ───────────────────────────────── */}
       {activeStep === 3 && (
         <Stack gap="lg">
           <Card withBorder p="lg" radius="md">
@@ -716,13 +977,13 @@ export default function PolicyStudioPage() {
               <Box>
                 <Title order={4}>Multi-Engine Live DDL & Security Simulator</Title>
                 <Text size="sm" c="dimmed">
-                  CES compiles your universal policy into native SQL DDL statements for Snowflake, AWS Redshift, and OPA Rego.
+                  Universal policy compiled into native SQL DDL for Snowflake, AWS Redshift, and OPA Rego.
                 </Text>
               </Box>
               <Button
                 size="xs"
                 variant="light"
-                color="violet"
+                color="indigo"
                 leftSection={isSimulating ? <Loader size={14} /> : <IconCode size={14} />}
                 onClick={handleSimulateCompiler}
               >
@@ -732,30 +993,30 @@ export default function PolicyStudioPage() {
 
             {isSimulating ? (
               <Box py="xl" ta="center">
-                <Loader color="violet" size="md" />
+                <Loader color="indigo" size="md" />
                 <Text size="sm" c="dimmed" mt="sm">Compiling DDL across cloud engines...</Text>
               </Box>
             ) : previewResult ? (
-              <Tabs defaultValue="snowflake" color="violet">
+              <Tabs defaultValue="redshift" color="indigo">
                 <Tabs.List mb="md">
-                  <Tabs.Tab value="snowflake" leftSection={<Text fw={700}>❄️ Snowflake DDL</Text>} />
                   <Tabs.Tab value="redshift" leftSection={<Text fw={700}>🔴 AWS Redshift DDL</Text>} />
+                  {/*<Tabs.Tab value="snowflake" leftSection={<Text fw={700}>❄️ Snowflake DDL</Text>} />
                   <Tabs.Tab value="opa" leftSection={<Text fw={700}>🛡️ OPA Rego Policy</Text>} />
-                  <Tabs.Tab value="json" leftSection={<Text fw={700}>📦 RAW JSON</Text>} />
+                  <Tabs.Tab value="json" leftSection={<Text fw={700}>📦 RAW JSON</Text>} />*/}
                 </Tabs.List>
-
-                <Tabs.Panel value="snowflake">
-                  <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
-                      {previewResult.snowflake_sql}
-                    </Code>
-                  </ScrollArea.Autosize>
-                </Tabs.Panel>
 
                 <Tabs.Panel value="redshift">
                   <ScrollArea.Autosize mah={400}>
                     <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
                       {previewResult.redshift_sql}
+                    </Code>
+                  </ScrollArea.Autosize>
+                </Tabs.Panel>
+
+                {/*<Tabs.Panel value="snowflake">
+                  <ScrollArea.Autosize mah={400}>
+                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
+                      {previewResult.snowflake_sql}
                     </Code>
                   </ScrollArea.Autosize>
                 </Tabs.Panel>
@@ -774,7 +1035,7 @@ export default function PolicyStudioPage() {
                       {JSON.stringify(constructDraftPayload(), null, 2)}
                     </Code>
                   </ScrollArea.Autosize>
-                </Tabs.Panel>
+                </Tabs.Panel>*/}
               </Tabs>
             ) : (
               <Alert color="orange" icon={<IconCode />}>
@@ -786,7 +1047,7 @@ export default function PolicyStudioPage() {
           <Group justify="space-between">
             <Button variant="default" onClick={() => setActiveStep(2)}>Back</Button>
             <Button
-              color="violet"
+              color="indigo"
               size="md"
               leftSection={<IconSend size={18} />}
               loading={saveMutation.isPending}

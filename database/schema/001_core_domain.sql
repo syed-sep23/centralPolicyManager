@@ -119,6 +119,48 @@ CREATE TABLE IF NOT EXISTS group_attributes (
     UNIQUE(role_id, attribute_key)
 );
 
+-- ─── Personas (Functional Business Entitlement Archetypes) ─────────────────────
+CREATE TABLE IF NOT EXISTS personas (
+    persona_id          SERIAL PRIMARY KEY,
+    organization_id     INTEGER NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    persona_name        VARCHAR(255) NOT NULL,
+    persona_code        VARCHAR(100) NOT NULL,
+    description         TEXT,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(organization_id, persona_code)
+);
+
+-- ─── Persona-User Mappings (Direct Member Users) ──────────────────────────────
+CREATE TABLE IF NOT EXISTS persona_user_mappings (
+    mapping_id          SERIAL PRIMARY KEY,
+    persona_id          INTEGER NOT NULL REFERENCES personas(persona_id) ON DELETE CASCADE,
+    user_id             INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(persona_id, user_id)
+);
+
+-- ─── Persona-Group Mappings (Member Identity Groups) ──────────────────────────
+CREATE TABLE IF NOT EXISTS persona_group_mappings (
+    mapping_id          SERIAL PRIMARY KEY,
+    persona_id          INTEGER NOT NULL REFERENCES personas(persona_id) ON DELETE CASCADE,
+    role_id             INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(persona_id, role_id)
+);
+
+-- ─── Persona ABAC Attributes ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS persona_attributes (
+    attribute_id        SERIAL PRIMARY KEY,
+    persona_id          INTEGER NOT NULL REFERENCES personas(persona_id) ON DELETE CASCADE,
+    attribute_key       VARCHAR(100) NOT NULL,
+    attribute_value     VARCHAR(500) NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(persona_id, attribute_key)
+);
+
 -- ─── Domain-Product Cross-Domain Relationships ────────────────────────────────
 CREATE TABLE IF NOT EXISTS domain_product_dependencies (
     dependency_id       SERIAL PRIMARY KEY,
@@ -157,4 +199,10 @@ CREATE INDEX IF NOT EXISTS idx_user_attrs_user   ON user_attributes(user_id);
 CREATE INDEX IF NOT EXISTS idx_group_attrs_role  ON group_attributes(role_id);
 CREATE INDEX IF NOT EXISTS idx_domains_org       ON data_domains(organization_id);
 CREATE INDEX IF NOT EXISTS idx_products_domain   ON data_products(domain_id);
+CREATE INDEX IF NOT EXISTS idx_personas_org          ON personas(organization_id);
+CREATE INDEX IF NOT EXISTS idx_pum_persona           ON persona_user_mappings(persona_id);
+CREATE INDEX IF NOT EXISTS idx_pum_user              ON persona_user_mappings(user_id);
+CREATE INDEX IF NOT EXISTS idx_pgm_persona           ON persona_group_mappings(persona_id);
+CREATE INDEX IF NOT EXISTS idx_pgm_role              ON persona_group_mappings(role_id);
+CREATE INDEX IF NOT EXISTS idx_persona_attrs_persona ON persona_attributes(persona_id);
 

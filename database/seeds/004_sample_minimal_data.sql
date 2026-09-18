@@ -85,6 +85,32 @@ INSERT INTO data_products (product_id, domain_id, product_name, product_code, de
 (1, 1, 'Revenue Summary Feed', 'PROD_REV_SUM', 'Aggregated monthly revenue metrics per region', 'CONFIDENTIAL')
 ON CONFLICT (product_id) DO NOTHING;
 
+-- ─── Minimal Personas (Functional Business Entitlement Archetypes) ────────────
+INSERT INTO personas (persona_id, organization_id, persona_name, persona_code, description, is_active) VALUES
+(1, 1, 'Senior Quantitative Analyst', 'PERSONA_SR_QUANT',      'Quantitative modelers and financial risk engineers with GL and transactional analytical clearance', TRUE),
+(2, 1, 'Data Platform Engineer',     'PERSONA_DATA_PLATFORM', 'Core infrastructure engineers responsible for cross-cloud pipelines and transformations',           TRUE)
+ON CONFLICT (persona_id) DO NOTHING;
+
+-- ─── Minimal Persona-Group Mappings (Constituent Groups in Persona) ───────────
+INSERT INTO persona_group_mappings (mapping_id, persona_id, role_id) VALUES
+(1, 1, 6),  -- PERSONA_SR_QUANT      ← Finance Analyst (role 6)
+(2, 1, 9),  -- PERSONA_SR_QUANT      ← Role Analyst (role 9)
+(3, 2, 3),  -- PERSONA_DATA_PLATFORM ← Data Engineer (role 3)
+(4, 2, 10)  -- PERSONA_DATA_PLATFORM ← Role Engineer (role 10)
+ON CONFLICT (persona_id, role_id) DO NOTHING;
+
+-- ─── Minimal Persona-User Mappings (Direct Member Users in Persona) ───────────
+INSERT INTO persona_user_mappings (mapping_id, persona_id, user_id) VALUES
+(1, 1, 1),  -- PERSONA_SR_QUANT      ← alice.chen (direct)
+(2, 2, 6)   -- PERSONA_DATA_PLATFORM ← frank.nguyen (direct)
+ON CONFLICT (persona_id, user_id) DO NOTHING;
+
+-- ─── Minimal Persona Attributes ───────────────────────────────────────────────
+INSERT INTO persona_attributes (attribute_id, persona_id, attribute_key, attribute_value) VALUES
+(1, 1, 'persona_tier', 'TIER_1_FINANCIAL'),
+(2, 2, 'persona_tier', 'TIER_1_INFRASTRUCTURE')
+ON CONFLICT (persona_id, attribute_key) DO UPDATE SET attribute_value = EXCLUDED.attribute_value;
+
 -- ─── Advance Auto-Increment Sequences ─────────────────────────────────────────
 SELECT setval('organizations_organization_id_seq',           COALESCE((SELECT MAX(organization_id) FROM organizations), 1));
 SELECT setval('data_domains_domain_id_seq',                   COALESCE((SELECT MAX(domain_id) FROM data_domains), 1));
@@ -92,6 +118,10 @@ SELECT setval('data_products_product_id_seq',                 COALESCE((SELECT M
 SELECT setval('roles_role_id_seq',                             COALESCE((SELECT MAX(role_id) FROM roles), 1));
 SELECT setval('users_user_id_seq',                             COALESCE((SELECT MAX(user_id) FROM users), 1));
 SELECT setval('user_role_mappings_mapping_id_seq',             COALESCE((SELECT MAX(mapping_id) FROM user_role_mappings), 1));
+SELECT setval('personas_persona_id_seq',                       COALESCE((SELECT MAX(persona_id) FROM personas), 1));
+SELECT setval('persona_user_mappings_mapping_id_seq',          COALESCE((SELECT MAX(mapping_id) FROM persona_user_mappings), 1));
+SELECT setval('persona_group_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM persona_group_mappings), 1));
+SELECT setval('persona_attributes_attribute_id_seq',           COALESCE((SELECT MAX(attribute_id) FROM persona_attributes), 1));
 SELECT setval('metadata_platforms_platform_id_seq',            COALESCE((SELECT MAX(platform_id) FROM metadata_platforms), 1));
 SELECT setval('platform_user_mappings_mapping_id_seq',         COALESCE((SELECT MAX(mapping_id) FROM platform_user_mappings), 1));
 SELECT setval('policies_policy_id_seq',                        COALESCE((SELECT MAX(policy_id) FROM policies), 1));
@@ -101,3 +131,4 @@ SELECT setval('policy_rule_subjects_subject_id_seq',           COALESCE((SELECT 
 SELECT setval('policy_rule_actions_action_id_seq',             COALESCE((SELECT MAX(action_id) FROM policy_rule_actions), 1));
 SELECT setval('policy_rule_conditions_condition_id_seq',       COALESCE((SELECT MAX(condition_id) FROM policy_rule_conditions), 1));
 SELECT setval('policy_rule_resources_resource_id_seq',         COALESCE((SELECT MAX(resource_id) FROM policy_rule_resources), 1));
+

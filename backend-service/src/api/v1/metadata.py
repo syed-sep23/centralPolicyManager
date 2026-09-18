@@ -665,6 +665,73 @@ async def list_columns(table_id: int, db: AsyncSession = Depends(get_db)):
     return [dict(r) for r in rows]
 
 
+@router.get("/tables/by-platforms")
+async def get_tables_by_platforms(
+    platform_ids: str = Query(..., description="Comma-separated platform IDs"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all tables belonging to the specified data platforms."""
+    pids = [int(p.strip()) for p in platform_ids.split(",") if p.strip().isdigit()]
+    if not pids:
+        return []
+    rows = (
+        (
+            await db.execute(
+                text("""
+                    SELECT 
+                        t.table_id, t.table_name, t.table_type,
+                        s.schema_id, s.schema_name,
+                        d.database_id, d.database_name,
+                        p.platform_id, p.platform_code, p.platform_name
+                    FROM metadata_tables t
+                    JOIN metadata_schemas s ON s.schema_id = t.schema_id
+                    JOIN metadata_databases d ON d.database_id = s.database_id
+                    JOIN metadata_platforms p ON p.platform_id = d.platform_id
+                    WHERE p.platform_id = ANY(:pids) AND p.is_active = TRUE
+                    ORDER BY p.platform_name, d.database_name, s.schema_name, t.table_name
+                """),
+                {"pids": pids},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(r) for r in rows]
+
+
+@router.get("/columns/by-tables")
+async def get_columns_by_tables(
+    table_ids: str = Query(..., description="Comma-separated table IDs"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all columns belonging to the specified tables."""
+    tids = [int(t.strip()) for t in table_ids.split(",") if t.strip().isdigit()]
+    if not tids:
+        return []
+    rows = (
+        (
+            await db.execute(
+                text("""
+                    SELECT 
+                        c.column_id, c.column_name, c.data_type, c.normalized_type,
+                        t.table_id, t.table_name,
+                        s.schema_name, d.database_name
+                    FROM metadata_columns c
+                    JOIN metadata_tables t ON t.table_id = c.table_id
+                    JOIN metadata_schemas s ON s.schema_id = t.schema_id
+                    JOIN metadata_databases d ON d.database_id = s.database_id
+                    WHERE c.table_id = ANY(:tids)
+                    ORDER BY t.table_name, c.ordinal_position
+                """),
+                {"tids": tids},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(r) for r in rows]
+
+
 @router.get("/search")
 async def search_metadata(
     q: str = Query(..., min_length=2),

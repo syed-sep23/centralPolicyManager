@@ -43,7 +43,7 @@ export default function AppSidebar() {
     {
       title: 'PEOPLE & OPERATIONS',
       items: [
-        { label: 'Users and Groups', href: '/roles', icon: IconUsers },
+        { label: 'Users, Groups & Personas', href: '/roles', icon: IconUsers },
         { label: 'Deployments and Task logs', href: '/deployments', icon: IconClipboardList },
       ],
     },

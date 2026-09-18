@@ -137,6 +137,8 @@ export const metadataApi = {
   schemas:          (dbId: number) => api.get(`/metadata/databases/${dbId}/schemas`),
   tables:           (schemaId: number) => api.get(`/metadata/schemas/${schemaId}/tables`),
   columns:          (tableId: number) => api.get(`/metadata/tables/${tableId}/columns`),
+  tablesByPlatforms: (platformIds: number[]) => api.get('/metadata/tables/by-platforms', { params: { platform_ids: platformIds.join(',') } }),
+  columnsByTables:  (tableIds: number[]) => api.get('/metadata/columns/by-tables', { params: { table_ids: tableIds.join(',') } }),
   search:           (q: string, type?: string) => api.get('/metadata/search', { params: { q, type } }),
   // Domains
   domains:          () => api.get('/metadata/domains'),
@@ -179,6 +181,27 @@ export const rbacApi = {
   revokeRole:  (userId: number, roleId: number) =>
     api.delete('/roles/assign', { params: { user_id: userId, role_id: roleId } }),
   syncIdp:     () => api.post('/users/sync-idp'),
+}
+
+// ─── Business Personas & Archetypes API ───────────────────────────────────────
+export const personasApi = {
+  list:         () => api.get('/personas'),
+  get:          (id: number) => api.get(`/personas/${id}`),
+  create:       (data: unknown) => api.post('/personas', data),
+  update:       (id: number, data: unknown) => api.put(`/personas/${id}`, data),
+  delete:       (id: number) => api.delete(`/personas/${id}`),
+  assignGroups: (personaId: number, roleIds: number[]) =>
+    api.post(`/personas/${personaId}/groups`, { role_ids: roleIds }),
+  removeGroup:  (personaId: number, roleId: number) =>
+    api.delete(`/personas/${personaId}/groups/${roleId}`),
+  assignUsers:  (personaId: number, userIds: number[]) =>
+    api.post(`/personas/${personaId}/users`, { user_ids: userIds }),
+  removeUser:   (personaId: number, userId: number) =>
+    api.delete(`/personas/${personaId}/users/${userId}`),
+  upsertAttr:   (personaId: number, data: unknown) =>
+    api.put(`/personas/${personaId}/attributes`, data),
+  deleteAttr:   (personaId: number, key: string) =>
+    api.delete(`/personas/${personaId}/attributes/${key}`),
 }
 
 
