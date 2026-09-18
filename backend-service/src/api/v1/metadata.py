@@ -262,7 +262,7 @@ async def create_platform(body: PlatformCreate, db: AsyncSession = Depends(get_d
                 :c, :n, :driver_code, :v, :a,
                 :acc, :wh, :db, :role,
                 :host, :port, :http, :cat, :u, :pwd,
-                :assigned_uid, :assigned_gids::jsonb,
+                :assigned_uid, CAST(:assigned_gids AS jsonb),
                 :conn_status, :tested_at, TRUE
             )
             ON CONFLICT (platform_code) DO UPDATE SET
@@ -371,7 +371,7 @@ async def update_platform(
                 db_user = COALESCE(:u, db_user),
                 db_password = COALESCE(:pwd, db_password),
                 assigned_user_id = CASE WHEN :has_user THEN :assigned_uid ELSE assigned_user_id END,
-                assigned_group_ids = CASE WHEN :has_gids THEN :assigned_gids::jsonb ELSE assigned_group_ids END,
+                assigned_group_ids = CASE WHEN :has_gids THEN CAST(:assigned_gids AS jsonb) ELSE assigned_group_ids END,
                 connection_status = COALESCE(:conn_status, connection_status),
                 last_tested_at = COALESCE(:tested_at, last_tested_at)
             WHERE platform_id = :p AND is_active = TRUE
