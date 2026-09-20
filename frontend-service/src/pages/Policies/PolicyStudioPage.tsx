@@ -2,18 +2,17 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   Stack, Title, Text, TextInput, Select, Textarea, Button, Group,
   Stepper, Box, Card, MultiSelect, Badge, Alert,
-  Paper, Switch, Loader, Tabs, SimpleGrid, ThemeIcon, Code,
-  ScrollArea, SegmentedControl,
+  Paper, Switch, SimpleGrid, ThemeIcon, SegmentedControl,
 } from '@mantine/core'
 import {
   IconKey, IconFilter, IconShieldLock, IconSparkles, IconCheck,
-  IconArrowLeft, IconArrowRight, IconSend, IconCode,
+  IconArrowLeft, IconArrowRight, IconSend, IconDeviceFloppy,
   IconTable, IconColumns, IconUsers, IconUser, IconChecklist,
 } from '@tabler/icons-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
-import { policiesApi, metadataApi, rbacApi, connectorApi } from '../../api/client'
+import { policiesApi, metadataApi, rbacApi } from '../../api/client'
 
 // ─── Policy Archetypes (Strictly Ordered) ─────────────────────────────────────
 // 1. Data Subscription Policy
@@ -104,14 +103,7 @@ export default function PolicyStudioPage() {
   const [maskType, setMaskType] = useState('HASH_SHA256')
   const [customMaskExpr, setCustomMaskExpr] = useState('SHA2(val, 256)')
 
-  // ─── Step 4: Preview Simulation ──────────────────────────────────────────────
-  const [previewResult, setPreviewResult] = useState<{
-    natural_language: string
-    snowflake_sql: string
-    redshift_sql: string
-    opa_rego: string
-  } | null>(null)
-  const [isSimulating, setIsSimulating] = useState(false)
+  // (Step 4 preview removed — save/deploy actions are now on Step 3)
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
   const platforms = useQuery({ queryKey: ['platforms'], queryFn: () => metadataApi.platforms() })
@@ -408,65 +400,16 @@ export default function PolicyStudioPage() {
     }
   }
 
-  // Trigger preview compilation
-  const handleSimulateCompiler = async () => {
-    setIsSimulating(true)
-    try {
-      const draft = constructDraftPayload()
 
-      // 1. Fetch OPA Rego & universal summary from backend
-      const backendResp = await policiesApi.previewCompile(draft)
-      const baseResult = backendResp.data || {}
 
-      // 2. Fetch Snowflake DDL directly from Snowflake Connector
-      let snowflakeSql = '-- Snowflake compilation pending...'
-      try {
-        const sfResp = await connectorApi.compileSnowflake(draft)
-        snowflakeSql = sfResp.data?.compiled_sql || sfResp.data || '-- No Snowflake DDL generated'
-      } catch (sfErr: any) {
-        snowflakeSql = `-- Snowflake Connector Note: ${sfErr?.response?.data?.detail || sfErr.message || 'Direct connector call failed'}`
-      }
-
-      // 3. Fetch Redshift DDL directly from Redshift Connector
-      let redshiftSql = '-- Redshift compilation pending...'
-      try {
-        const rsResp = await connectorApi.compileRedshift(draft)
-        redshiftSql = rsResp.data?.compiled_sql || rsResp.data || '-- No Redshift DDL generated'
-      } catch (rsErr: any) {
-        redshiftSql = `-- Redshift Connector Note: ${rsErr?.response?.data?.detail || rsErr.message || 'Direct connector call failed'}`
-      }
-
-      setPreviewResult({
-        ...baseResult,
-        snowflake_sql: snowflakeSql,
-        redshift_sql: redshiftSql,
-      })
-    } catch (err: any) {
-      notifications.show({
-        title: 'Simulation Error',
-        message: err?.response?.data?.detail || 'Failed to simulate multi-engine DDL compilation',
-        color: 'red',
-      })
-    } finally {
-      setIsSimulating(false)
-    }
-  }
-
-  // Automatically simulate compiler when arriving at Step 3
-  useEffect(() => {
-    if (activeStep === 3) {
-      handleSimulateCompiler()
-    }
-  }, [activeStep])
-
-  // Save Mutation
+  // ─── Save Mutation ────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: (draft: any) => isEditing ? policiesApi.update(policyId!, draft) : policiesApi.create(draft),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       notifications.show({
-        title: 'Policy Saved Successfully',
-        message: `Policy ${policyCode} has been saved!`,
+        title: 'Policy Saved',
+        message: `Policy "${policyCode}" has been saved successfully.`,
         color: 'teal',
         icon: <IconCheck size={16} />,
       })
@@ -474,8 +417,39 @@ export default function PolicyStudioPage() {
     },
     onError: (err: any) => {
       notifications.show({
-        title: 'Policy Creation Failed',
-        message: err?.response?.data?.detail || 'Error saving policy specification',
+        title: 'Save Failed',
+        message: err?.response?.data?.detail || 'Error saving policy specification.',
+        color: 'red',
+      })
+    },
+  })
+
+  // ─── Save & Deploy Mutation ───────────────────────────────────────────────────
+  const saveAndDeployMutation = useMutation({
+    mutationFn: async (draft: any) => {
+      // Step 1: Create or update the policy
+      const saveResp = isEditing
+        ? await policiesApi.update(policyId!, draft)
+        : await policiesApi.create(draft)
+      const savedId = saveResp.data?.policy_id ?? policyId
+      // Step 2: Submit / deploy it
+      await policiesApi.submit(savedId)
+      return saveResp
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      notifications.show({
+        title: 'Policy Deployed',
+        message: `Policy "${policyCode}" has been saved and deployed to the target platform.`,
+        color: 'indigo',
+        icon: <IconSend size={16} />,
+      })
+      navigate('/policies')
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Deploy Failed',
+        message: err?.response?.data?.detail || 'Policy was saved but deployment failed.',
         color: 'red',
       })
     },
@@ -564,7 +538,6 @@ export default function PolicyStudioPage() {
         <Stepper.Step label="1. Policy Type" description="Select type & name" />
         <Stepper.Step label="2. Platforms & Tables" description="Target scope" />
         <Stepper.Step label="3. Actions & Allowed Subjects" description="Rules, groups & users" />
-        <Stepper.Step label="4. Review & DDL Simulation" description="Multi-cloud SQL preview" />
       </Stepper>
 
       {/* ── STEP 1: Policy Archetype & Meta ──────────────────────────────────── */}
@@ -957,104 +930,27 @@ export default function PolicyStudioPage() {
 
           <Group justify="space-between">
             <Button variant="default" onClick={() => setActiveStep(1)}>Back</Button>
-            <Button
-              color="indigo"
-              rightSection={<IconArrowRight size={16} />}
-              disabled={!isStep3Valid}
-              onClick={() => setActiveStep(3)}
-            >
-              Review & Simulate Multi-Engine DDL
-            </Button>
-          </Group>
-        </Stack>
-      )}
-
-      {/* ── STEP 4: Review & Live DDL Simulator ───────────────────────────────── */}
-      {activeStep === 3 && (
-        <Stack gap="lg">
-          <Card withBorder p="lg" radius="md">
-            <Group justify="space-between" mb="sm">
-              <Box>
-                <Title order={4}>Multi-Engine Live DDL & Security Simulator</Title>
-                <Text size="sm" c="dimmed">
-                  Universal policy compiled into native SQL DDL for Snowflake, AWS Redshift, and OPA Rego.
-                </Text>
-              </Box>
+            <Group gap="sm">
               <Button
-                size="xs"
-                variant="light"
-                color="indigo"
-                leftSection={isSimulating ? <Loader size={14} /> : <IconCode size={14} />}
-                onClick={handleSimulateCompiler}
+                variant="outline"
+                color="teal"
+                leftSection={<IconDeviceFloppy size={16} />}
+                loading={saveMutation.isPending}
+                disabled={!isStep3Valid || saveAndDeployMutation.isPending}
+                onClick={() => saveMutation.mutate(constructDraftPayload())}
               >
-                Re-simulate Code
+                Save Policy
+              </Button>
+              <Button
+                color="indigo"
+                leftSection={<IconSend size={16} />}
+                loading={saveAndDeployMutation.isPending}
+                disabled={!isStep3Valid || saveMutation.isPending}
+                onClick={() => saveAndDeployMutation.mutate(constructDraftPayload())}
+              >
+                Save & Deploy Policy
               </Button>
             </Group>
-
-            {isSimulating ? (
-              <Box py="xl" ta="center">
-                <Loader color="indigo" size="md" />
-                <Text size="sm" c="dimmed" mt="sm">Compiling DDL across cloud engines...</Text>
-              </Box>
-            ) : previewResult ? (
-              <Tabs defaultValue="redshift" color="indigo">
-                <Tabs.List mb="md">
-                  <Tabs.Tab value="redshift" leftSection={<Text fw={700}>🔴 AWS Redshift DDL</Text>} />
-                  {/*<Tabs.Tab value="snowflake" leftSection={<Text fw={700}>❄️ Snowflake DDL</Text>} />
-                  <Tabs.Tab value="opa" leftSection={<Text fw={700}>🛡️ OPA Rego Policy</Text>} />
-                  <Tabs.Tab value="json" leftSection={<Text fw={700}>📦 RAW JSON</Text>} />*/}
-                </Tabs.List>
-
-                <Tabs.Panel value="redshift">
-                  <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
-                      {previewResult.redshift_sql}
-                    </Code>
-                  </ScrollArea.Autosize>
-                </Tabs.Panel>
-
-                {/*<Tabs.Panel value="snowflake">
-                  <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
-                      {previewResult.snowflake_sql}
-                    </Code>
-                  </ScrollArea.Autosize>
-                </Tabs.Panel>
-
-                <Tabs.Panel value="opa">
-                  <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
-                      {previewResult.opa_rego}
-                    </Code>
-                  </ScrollArea.Autosize>
-                </Tabs.Panel>
-
-                <Tabs.Panel value="json">
-                  <ScrollArea.Autosize mah={400}>
-                    <Code block style={{ backgroundColor: 'var(--ces-surface-code)' }}>
-                      {JSON.stringify(constructDraftPayload(), null, 2)}
-                    </Code>
-                  </ScrollArea.Autosize>
-                </Tabs.Panel>*/}
-              </Tabs>
-            ) : (
-              <Alert color="orange" icon={<IconCode />}>
-                Click "Re-simulate Code" to generate multi-cloud DDL definitions.
-              </Alert>
-            )}
-          </Card>
-
-          <Group justify="space-between">
-            <Button variant="default" onClick={() => setActiveStep(2)}>Back</Button>
-            <Button
-              color="indigo"
-              size="md"
-              leftSection={<IconSend size={18} />}
-              loading={saveMutation.isPending}
-              onClick={() => saveMutation.mutate(constructDraftPayload())}
-            >
-              {isEditing ? 'Save Changes' : 'Save & Publish Global Policy'}
-            </Button>
           </Group>
         </Stack>
       )}
