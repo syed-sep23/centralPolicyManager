@@ -82,7 +82,22 @@ async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[st
             dict(r)
             for r in (
                 await db.execute(
-                    text("SELECT * FROM policy_rule_resources WHERE rule_id = :rid"), {"rid": rid}
+                    text("""
+                        SELECT
+                            prr.*,
+                            mt.table_name,
+                            ms.schema_name,
+                            md.database_name,
+                            mp.platform_code,
+                            mp.platform_name
+                        FROM policy_rule_resources prr
+                        LEFT JOIN metadata_tables    mt ON mt.table_id    = prr.table_id
+                        LEFT JOIN metadata_schemas   ms ON ms.schema_id   = prr.schema_id
+                        LEFT JOIN metadata_databases md ON md.database_id = prr.database_id
+                        LEFT JOIN metadata_platforms mp ON mp.platform_id = prr.platform_id
+                        WHERE prr.rule_id = :rid
+                    """),
+                    {"rid": rid},
                 )
             )
             .mappings()
