@@ -14,21 +14,73 @@ from datetime import datetime
 from typing import Any, Optional
 
 
-def get_redshift_mask_expr(mask_type: str, custom_expr: Optional[str] = None) -> str:
-    """Return native Redshift SQL expression for the requested masking technique.
+def get_redshift_mask_expr(
+    mask_type: str,
+    custom_expr: Optional[str] = None,
+    data_type: Optional[str] = None,
+    normalized_type: Optional[str] = None,
+) -> str:
+    """Return native Redshift SQL expression for the requested masking technique and column data type.
 
     Redshift DDM uses CASE expressions within CREATE MASKING POLICY ... USING (...).
-    All functions used must be valid Redshift SQL.
+    All functions used must be valid Redshift SQL and evaluate to a type compatible with the input data type.
     """
-    expressions = {
-        "HASH_SHA256": "SHA2(val, 256)",
-        "EMAIL_REDACT": "REGEXP_REPLACE(val, '^(.{2})(.*)(@.*)$', '\\\\1****\\\\3')",
-        "PARTIAL_4_DIGITS": "CONCAT('****-****-****-', RIGHT(val, 4))",
-        "NULLIFY": "NULL",
-    }
     if mask_type == "CUSTOM" and custom_expr:
         return custom_expr
-    return expressions.get(mask_type, "'***MASKED***'")
+
+    mtype = (mask_type or "HASH_SHA256").upper()
+    dtype = (data_type or "VARCHAR").lower()
+    ntype = (normalized_type or "").upper()
+
+    is_numeric = (
+        ntype == "NUMBER"
+        or any(t in dtype for t in ("int", "num", "dec", "float", "double", "real", "bigint", "smallint"))
+    )
+    is_date_time = (
+        ntype in ("DATE", "TIMESTAMP")
+        or any(t in dtype for t in ("date", "time", "timestamp"))
+    )
+    is_boolean = ntype == "BOOLEAN" or "bool" in dtype
+
+    if mtype in ("NULLIFY", "NULL_MASK"):
+        return "NULL"
+
+    if mtype == "HASH_SHA256":
+        if is_numeric:
+            return "0"
+        if is_date_time:
+            return "NULL"
+        if is_boolean:
+            return "FALSE"
+        return "SHA2(val, 256)"
+
+    if mtype in ("EMAIL_REDACT", "EMAIL_MASK"):
+        if is_numeric or is_date_time or is_boolean:
+            return "NULL"
+        return "REGEXP_REPLACE(val, '^(.{2})(.*)(@.*)$', '\\\\1****\\\\3')"
+
+    if mtype == "PHONE_MASK":
+        if is_numeric or is_date_time or is_boolean:
+            return "NULL"
+        return "CONCAT('***-***-', RIGHT(val, 4))"
+
+    if mtype in ("PARTIAL_4_DIGITS", "PARTIAL_MASK"):
+        if is_numeric:
+            return "0"
+        if is_date_time:
+            return "NULL"
+        if is_boolean:
+            return "FALSE"
+        return "CONCAT('****-****-****-', RIGHT(val, 4))"
+
+    # Default fallback
+    if is_numeric:
+        return "0"
+    if is_date_time:
+        return "NULL"
+    if is_boolean:
+        return "FALSE"
+    return "'***MASKED***'"
 
 
 class RedshiftPolicyCompiler:
@@ -128,16 +180,21 @@ class RedshiftPolicyCompiler:
                 lines.append(f"-- WARNING: Incomplete resource definition, skipping: {res}")
                 continue
             full_table_path = f"{schema_name}.{table_name}"
+            columns = res.get("columns") or []
 
             for action in rule.get("actions", []):
                 act_type = action.get("action_type")
                 if act_type == "MASK_COLUMN":
                     lines.extend(
-                        self._compile_masking(action, table_name, full_table_path, member_users, role_codes)
+                        self._compile_masking(
+                            action, table_name, full_table_path, member_users, role_codes, columns=columns
+                        )
                     )
                 elif act_type == "FILTER_ROWS":
                     lines.extend(
-                        self._compile_rls(action, table_name, full_table_path, member_users, role_codes)
+                        self._compile_rls(
+                            action, table_name, full_table_path, member_users, role_codes, columns=columns
+                        )
                     )
                 elif act_type in ("GRANT_SELECT", "GRANT_INSERT", "GRANT_UPDATE"):
                     lines.extend(
@@ -166,87 +223,124 @@ class RedshiftPolicyCompiler:
         full_table_path: str,
         member_users: list[dict],
         role_codes: list[str],
+        columns: Optional[list[dict]] = None,
     ) -> list[str]:
         """Compile a MASK_COLUMN action into Redshift Dynamic Data Masking DDL."""
         lines: list[str] = []
         mask_type = action.get("mask_type", "HASH_SHA256")
-        mask_col = (action.get("filter_column") or "").lower()
+        mask_col = action.get("filter_column") or ""
         custom_expr = action.get("mask_expression")
-        mask_expr = get_redshift_mask_expr(mask_type, custom_expr)
 
-        if not mask_col:
+        # Map existing columns by lower-cased column name
+        col_lookup: dict[str, dict] = {}
+        if columns:
+            for c in columns:
+                cname = (c.get("column_name") or "").lower()
+                if cname:
+                    col_lookup[cname] = c
+
+        # Determine target columns to mask (supports comma-separated string or column list)
+        cols_to_mask: list[str] = []
+        if mask_col:
+            cols_to_mask = [c.strip() for c in mask_col.split(",") if c.strip()]
+        elif columns:
+            scoped = [c.get("column_name") for c in columns if c.get("is_scoped")]
+            cols_to_mask = scoped or [c.get("column_name") for c in columns]
+
+        if not cols_to_mask:
             lines.append("-- WARNING: No column specified for masking action. Skipping.")
             lines.append("")
             return lines
 
-        mask_policy_name = f"mask_{table_name}_{mask_col}"
+        for target_col in cols_to_mask:
+            clean_col = target_col.lower()
+            col_meta = col_lookup.get(clean_col)
 
-        lines.append("-- Native Redshift Dynamic Data Masking (DDM) (Compiled per User)")
-        lines.append(f"CREATE MASKING POLICY {mask_policy_name}")
-        lines.append("WITH (val VARCHAR)")
-        lines.append("USING (")
-        lines.append("  CASE")
+            data_type = "VARCHAR"
+            normalized_type = "TEXT"
+            col_display = clean_col
 
-        # Admin bypass: the enforcing user (platform connection owner)
-        if self._enforcing_user:
-            lines.append(f"    -- Admin Bypass: Platform connection owner")
-            lines.append(f"    WHEN CURRENT_USER = '{self._enforcing_user}' THEN val")
+            if col_meta:
+                data_type = col_meta.get("data_type") or "VARCHAR"
+                normalized_type = col_meta.get("normalized_type") or "TEXT"
+                col_display = f"{clean_col} (Type: {data_type}, Normalized: {normalized_type})"
 
-        # Per-user entitlements
-        if member_users:
-            skipped = []
-            for u in member_users:
-                rs_uid = u.get("redshift_user")
-                disp_name = u.get("display_name") or u.get("username")
-                grp_code = u.get("role_code") or "MEMBER"
-                if rs_uid:
-                    lines.append(
-                        f"    -- User Entitlement: {disp_name} ({u.get('username')}) [Group: {grp_code}]"
-                    )
-                    lines.append(f"    WHEN CURRENT_USER = '{rs_uid}' THEN val")
-                else:
-                    skipped.append(f"{disp_name} ({u.get('username')})")
-
-            if skipped:
-                for s in skipped:
-                    lines.append(f"    -- WARNING: Skipped user {s} — no Redshift platform_user_mapping")
-        else:
-            # Role-based bypass
-            if role_codes:
-                role_checks = [f"pg_has_role(CURRENT_USER, '{r}', 'MEMBER')" for r in role_codes]
-                role_checks_sql = " OR ".join(role_checks)
-                lines.append(f"    WHEN {role_checks_sql} THEN val")
-
-        lines.append(f"    ELSE {mask_expr}")
-        lines.append("  END")
-        lines.append(");")
-        lines.append("")
-
-        # Attach masking policy
-        if member_users:
-            lines.append("-- Attach Masking Policy separately to each member user in Redshift:")
-            for u in member_users:
-                rs_uid = u.get("redshift_user")
-                if not rs_uid:
-                    continue
-                lines.append(
-                    f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO USER {rs_uid};"
-                )
-        elif role_codes:
-            for r in role_codes:
-                lines.append(
-                    f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO ROLE {r};"
-                )
-        else:
-            lines.append(
-                f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({mask_col}) TO PUBLIC;"
+            mask_expr = get_redshift_mask_expr(
+                mask_type=mask_type,
+                custom_expr=custom_expr,
+                data_type=data_type,
+                normalized_type=normalized_type,
             )
 
-        lines.append("-- Verification: Inspect active Redshift masking policy catalog")
-        lines.append(
-            f"SELECT * FROM SVV_MASKING_POLICY WHERE policy_name = '{mask_policy_name}';"
-        )
-        lines.append("")
+            mask_policy_name = f"mask_{table_name}_{clean_col}"
+
+            lines.append(f"-- Native Redshift Dynamic Data Masking (DDM) for Column: {col_display}")
+            lines.append(f"CREATE MASKING POLICY {mask_policy_name}")
+            lines.append(f"WITH (val {data_type.upper()})")
+            lines.append("USING (")
+            lines.append("  CASE")
+
+            # Admin bypass: the enforcing user (platform connection owner)
+            if self._enforcing_user:
+                lines.append("    -- Admin Bypass: Platform connection owner")
+                lines.append(f"    WHEN CURRENT_USER = '{self._enforcing_user}' THEN val")
+
+            # Per-user entitlements
+            if member_users:
+                skipped = []
+                for u in member_users:
+                    rs_uid = u.get("redshift_user")
+                    disp_name = u.get("display_name") or u.get("username")
+                    grp_code = u.get("role_code") or "MEMBER"
+                    if rs_uid:
+                        lines.append(
+                            f"    -- User Entitlement: {disp_name} ({u.get('username')}) [Group: {grp_code}]"
+                        )
+                        lines.append(f"    WHEN CURRENT_USER = '{rs_uid}' THEN val")
+                    else:
+                        skipped.append(f"{disp_name} ({u.get('username')})")
+
+                if skipped:
+                    for s in skipped:
+                        lines.append(f"    -- WARNING: Skipped user {s} — no Redshift platform_user_mapping")
+            else:
+                # Role-based bypass
+                if role_codes:
+                    role_checks = [f"pg_has_role(CURRENT_USER, '{r}', 'MEMBER')" for r in role_codes]
+                    role_checks_sql = " OR ".join(role_checks)
+                    lines.append(f"    WHEN {role_checks_sql} THEN val")
+
+            lines.append(f"    ELSE {mask_expr}")
+            lines.append("  END")
+            lines.append(");")
+            lines.append("")
+
+            # Attach masking policy
+            if member_users:
+                lines.append(f"-- Attach Masking Policy for {clean_col} separately to each member user:")
+                for u in member_users:
+                    rs_uid = u.get("redshift_user")
+                    if not rs_uid:
+                        continue
+                    lines.append(
+                        f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({clean_col}) TO USER {rs_uid};"
+                    )
+            elif role_codes:
+                for r in role_codes:
+                    lines.append(
+                        f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({clean_col}) TO ROLE {r};"
+                    )
+            else:
+                lines.append(
+                    f"ATTACH MASKING POLICY {mask_policy_name} ON {full_table_path}({clean_col}) TO PUBLIC;"
+                )
+
+            lines.append(f"-- Verification: Inspect active Redshift masking policy catalog for {clean_col}")
+            lines.append(
+                f"SELECT * FROM SVV_MASKING_POLICY WHERE policy_name = '{mask_policy_name}';"
+            )
+            lines.append("")
+
         return lines
 
     # ─── Row-Level Security (Redshift RLS) ─────────────────────────────────────
@@ -258,6 +352,7 @@ class RedshiftPolicyCompiler:
         full_table_path: str,
         member_users: list[dict],
         role_codes: list[str],
+        columns: Optional[list[dict]] = None,
     ) -> list[str]:
         """Compile a FILTER_ROWS action into Redshift Row-Level Security DDL."""
         lines: list[str] = []
@@ -269,6 +364,13 @@ class RedshiftPolicyCompiler:
             lines.append("-- WARNING: No column specified for row filter action. Skipping.")
             lines.append("")
             return lines
+
+        col_dtype = "VARCHAR"
+        if columns:
+            for c in columns:
+                if (c.get("column_name") or "").lower() == filter_col:
+                    col_dtype = c.get("data_type") or "VARCHAR"
+                    break
 
         base_rls_name = f"rls_{table_name}_{filter_col}"
 
@@ -282,7 +384,7 @@ class RedshiftPolicyCompiler:
                     user_rls_name = f"{base_rls_name}_{rs_uid}"
                     lines.append(f"-- ─── RLS Policy for User: {disp_name} ({rs_uid}) ───")
                     lines.append(f"CREATE RLS POLICY {user_rls_name}")
-                    lines.append(f"WITH ({filter_col} VARCHAR)")
+                    lines.append(f"WITH ({filter_col} {col_dtype.upper()})")
                     lines.append(f"USING ({filter_col} {filter_op} '{filter_val}');")
                     lines.append(
                         f"ATTACH RLS POLICY {user_rls_name} ON {full_table_path} TO USER {rs_uid};"
@@ -296,7 +398,7 @@ class RedshiftPolicyCompiler:
         else:
             lines.append("-- Native Redshift Row-Level Security (RLS)")
             lines.append(f"CREATE RLS POLICY {base_rls_name}")
-            lines.append(f"WITH ({filter_col} VARCHAR)")
+            lines.append(f"WITH ({filter_col} {col_dtype.upper()})")
             lines.append(f"USING ({filter_col} {filter_op} '{filter_val}');")
             lines.append("")
             if role_codes:

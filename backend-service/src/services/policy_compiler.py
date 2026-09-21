@@ -104,6 +104,88 @@ async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[st
             .all()
         ]
 
+        # Populate column metadata for each resource table
+        for res in resources:
+            tid = res.get("table_id")
+            if not tid and res.get("schema_id") and res.get("table_name"):
+                tbl_row = (
+                    await db.execute(
+                        text("SELECT table_id FROM metadata_tables WHERE schema_id = :sid AND LOWER(table_name) = :tname"),
+                        {"sid": res["schema_id"], "tname": res["table_name"].lower()},
+                    )
+                ).first()
+                if tbl_row:
+                    tid = tbl_row[0]
+                    res["table_id"] = tid
+
+            columns = []
+            if tid:
+                col_rows = (
+                    await db.execute(
+                        text("""
+                            SELECT
+                                column_id,
+                                table_id,
+                                column_name,
+                                ordinal_position,
+                                data_type,
+                                normalized_type,
+                                character_max_length,
+                                numeric_precision,
+                                numeric_scale,
+                                is_nullable,
+                                is_primary_key,
+                                default_value
+                            FROM metadata_columns
+                            WHERE table_id = :tid
+                            ORDER BY ordinal_position
+                        """),
+                        {"tid": tid},
+                    )
+                ).mappings().all()
+                columns = [dict(c) for c in col_rows]
+
+            resid = res.get("resource_id")
+            if resid:
+                scoped_col_ids = set(
+                    (
+                        await db.execute(
+                            text("SELECT column_id FROM policy_rule_resource_columns WHERE resource_id = :resid"),
+                            {"resid": resid},
+                        )
+                    ).scalars().all()
+                )
+                if scoped_col_ids:
+                    if not columns:
+                        c_rows = (
+                            await db.execute(
+                                text("""
+                                    SELECT
+                                        column_id,
+                                        table_id,
+                                        column_name,
+                                        ordinal_position,
+                                        data_type,
+                                        normalized_type,
+                                        character_max_length,
+                                        numeric_precision,
+                                        numeric_scale,
+                                        is_nullable,
+                                        is_primary_key,
+                                        default_value
+                                    FROM metadata_columns
+                                    WHERE column_id = ANY(:cids)
+                                    ORDER BY ordinal_position
+                                """),
+                                {"cids": list(scoped_col_ids)},
+                            )
+                        ).mappings().all()
+                        columns = [dict(c) for c in c_rows]
+                    for col in columns:
+                        col["is_scoped"] = col["column_id"] in scoped_col_ids
+
+            res["columns"] = columns
+
         subj_rows = (
             await db.execute(
                 text("""
@@ -240,12 +322,16 @@ async def fetch_policy_raw_payload(version_id: int, db: AsyncSession) -> dict[st
     def _json_serial(obj):
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
+        if isinstance(obj, dict):
+            return {k: _json_serial(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_json_serial(x) for x in obj]
         return obj
 
     raw = {k: _json_serial(v) for k, v in dict(ver_row).items()}
-    raw["rules"] = rules
-    raw["targets"] = [dict(t) for t in target_rows]
-    raw["target_users"] = list(all_target_users.values())
+    raw["rules"] = _json_serial(rules)
+    raw["targets"] = _json_serial([dict(t) for t in target_rows])
+    raw["target_users"] = _json_serial(list(all_target_users.values()))
     return raw
 
 
